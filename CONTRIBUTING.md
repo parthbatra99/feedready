@@ -7,7 +7,7 @@ Issues and pull requests are welcome. For a bug, include the `doctor` report, th
 Install the plugin from your clone instead of GitHub, so Claude Code runs your changes:
 
 ```bash
-git clone https://github.com/dataguyofprocol/feedready.git
+git clone https://github.com/parthbatra99/feedready.git
 claude plugin marketplace add ./feedready
 claude plugin install feedready@feedready
 ./feedready/skills/feedready/setup.sh --segformer --models

@@ -52,12 +52,12 @@ Every round renders each edit on its own, zoomed to where it acts, and ranks the
 
 feedready is a plugin, and this repo is its marketplace. Install it once and it's in every chat.
 
-**claude.ai (and the Claude apps signed into the same account).** Go to Customize → Plugins → Add → Add marketplace, enter `dataguyofprocol/feedready`, then Sync. Add **feedready** from the list. In any chat, attach a photo and type `/feedready make this insta ready`.
+**claude.ai (and the Claude apps signed into the same account).** Go to Customize → Plugins → Add → Add marketplace, enter `parthbatra99/feedready`, then Sync. Add **feedready** from the list. In any chat, attach a photo and type `/feedready make this insta ready`.
 
 **Claude Code (Mac).** You need an Apple Silicon Mac on macOS 14+, the Xcode Command Line Tools and `uv` or Python 3.14.
 
 ```bash
-claude plugin marketplace add dataguyofprocol/feedready
+claude plugin marketplace add parthbatra99/feedready
 claude plugin install feedready@feedready
 ```
 
@@ -134,7 +134,7 @@ All of it is open source, so you can check every one of these claims. It's provi
 
 feedready is the tooling: the edit loop, the masks, the renderer and the self-review. The models are one way to find regions in a photo, and they aren't part of feedready. Apple Vision does people and faces on a Mac without any of them, and every shape, brightness and colour mask works with no model at all.
 
-feedready ships no model weights. It downloads each model from its publisher's Hugging Face release, pinned to a revision. Sandboxes that can't reach Hugging Face, such as claude.ai, fall back to this repo's [`models-v1` release](https://github.com/dataguyofprocol/feedready/releases/tag/models-v1), which holds unmodified copies with each model's licence beside it. Each model stays under its own licence, and that licence, not feedready's MIT licence, governs how you use it:
+feedready ships no model weights. It downloads each model from its publisher's Hugging Face release, pinned to a revision. Sandboxes that can't reach Hugging Face, such as claude.ai, fall back to this repo's [`models-v1` release](https://github.com/parthbatra99/feedready/releases/tag/models-v1), which holds unmodified copies with each model's licence beside it. Each model stays under its own licence, and that licence, not feedready's MIT licence, governs how you use it:
 
 | Model | Licence | Used for |
 |---|---|---|

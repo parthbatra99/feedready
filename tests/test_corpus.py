@@ -12,7 +12,7 @@ from imaging import load_rgb
 
 KODAK_URL = "http://r0k.us/graphics/kodak/kodim{:02d}.png"
 COMMONS_URL = "https://commons.wikimedia.org/wiki/Special:FilePath/{}?width=1800"
-USER_AGENT = "feedready-selftest/0.2 (https://github.com/dataguyofprocol/feedready)"
+USER_AGENT = "feedready-selftest/0.2 (https://github.com/parthbatra99/feedready)"
 
 COMMONS_FILES = {
     "portrait-light": "AR700164-Edit.jpg",

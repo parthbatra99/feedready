@@ -1,5 +1,5 @@
 {
-  "mirrors": ["https://github.com/dataguyofprocol/feedready/releases/download/models-v1"],
+  "mirrors": ["https://github.com/parthbatra99/feedready/releases/download/models-v1"],
   "models": {
     "segformer": {
       "what": "SegFormer-B0 ADE20K scene segmentation",
