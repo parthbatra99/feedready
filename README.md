@@ -65,7 +65,7 @@ Then attach a photo in any session and say "make this insta ready". On first use
 
 ## Update
 
-**claude.ai.** When you add the marketplace, keep *Sync automatically* on. claude.ai then follows this repo as it changes, once the Claude GitHub App has access (it asks the first time). Without that access, remove feedready under Customize → Plugins and add it again from the marketplace to get the latest version.
+**claude.ai.** Go to Customize → Plugins → Add → Manage marketplaces, open the ⋯ menu on feedready, and choose *Check for updates*. To get updates without asking, turn on *Sync automatically* in the same menu. claude.ai asks you to give the Claude GitHub App access the first time.
 
 **Claude Code.**
 
