@@ -14,7 +14,7 @@ Repo is a Claude Code plugin (`feedready`) that is also its own plugin marketpla
 # Rebuild runtime (safe to rerun); --segformer / --models download models (~75 MB)
 skills/feedready/setup.sh --segformer --models
 
-# Phone upload bundle → ~/Desktop/feedready.zip
+# Standalone skill bundle (only for people who upload the skill instead of adding the marketplace) → ~/Desktop/feedready.zip
 ./build_zip.sh [outfile]
 ```
 
@@ -25,7 +25,7 @@ skills/feedready/setup.sh --segformer --models
 
 - **Claude Code runs an installed copy** at `~/.claude/plugins/cache/feedready/`. Never edit that copy. Edit the repo, then ship via: bump `version` in `.claude-plugin/plugin.json` → `claude plugin marketplace update feedready && claude plugin update feedready@feedready` → `/reload-plugins`.
 - Changing `skills/feedready/swift/feedready_engine.swift` requires rerunning `setup.sh` (it records a sha256; `doctor` reports the engine stale until rebuilt).
-- Any skill change means rebuilding and re-uploading `build_zip.sh` for the phone tier.
+- claude.ai (web and phone) installs the plugin from this repo's marketplace and syncs from `main`, so pushing is the release; the version bump still matters for Claude Code.
 - README art is generated from one real session (`~/.cache/feedready/work/1-012c6c15/`), not drawn by hand: `assets/make_hero.py` renders `hero.webp` (2×, what GitHub shows) and the `hero.gif` fallback, `assets/make_panels.py` renders `sees.webp` (the session's real masks via `masks.build`) and `work.webp` (the top v4 edit cards), and `assets/make_talk.py` renders `art/talk.svg` as Geist outlines. If you change how `masks`, `board`, `cards` or step colours work, regenerate them so the README stays truthful (CONTRIBUTING.md has the commands). Keep `hero.webp` under ~8 MB and check it for ghosting (faint leftovers of earlier frames) after changing the encoder settings.
 - Commit messages use conventional commits scoped to the package: `feat(feedready): ...`, `fix(feedready): ...`.
 
@@ -45,6 +45,7 @@ skills/feedready/setup.sh --segformer --models
 - **No code comments or docstrings** — in any language (Python, Swift, shell). The codebase is comment-free by choice; don't add explanatory comments, inline or standalone. Shebangs and user-facing strings (e.g. the argparse `USAGE` help text) are not comments — keep those. Explain design intent in commit messages instead.
 - **SKILL.md stays an open-spec Agent Skill** ([agentskills.io](https://agentskills.io)), so Codex and other agents can load it too. Frontmatter holds only `name` (matches the folder) and `description` (≤1024 chars); no Claude-only fields. Name a Claude tool only as an example ("SendUserFile in the Claude Code app"), never as the only way to do a step.
 - **Capabilities, not tiers.** Rendering is Core Image on a Mac, numpy elsewhere. Detection is Apple Vision on a Mac; elsewhere `portable.py` (YuNet, U²-Net-p, SegFormer, EdgeTAM) writes the same `vision.json`. Models come from `models.json` via `setup.sh` (Mac) or `feedready.py bootstrap` (phone/sandbox). A missing capability must refuse with `MissingCapability` and the command that adds it; never fake it with a heuristic. `doctor` reports `tier` (`mac`/`portable`/`basic`) and `capabilities`. `FEEDREADY_NO_ENGINE=1` exercises the phone path on a Mac.
+- **README claims about privacy and models are promises.** It says feedready uploads nothing, has no telemetry, pins every model by sha256, and ships no weights (the `models-v1` mirror is the one redistribution, with licences). Keep code changes inside those claims, or update the README in the same commit.
 - **Coordinates are fractions of the original photo, origin top-left, before crop** — crop is applied last. Read coordinates off the `inspect` grid image, never by eye.
 - All state (venv, models, engine, per-photo work dirs) lives in `~/.cache/feedready/`; the repo and plugin copy stay code-only (`build_zip.sh` excludes `swift/`, `setup.sh`, `__pycache__`). Final images go to `~/Pictures/feedready/` (Mac) or `/mnt/user-data/outputs/` (phone).
 - Requirements: Apple Silicon, macOS 14+, Xcode CLT (`swiftc`), `uv` or Python 3.14. SegFormer is research-or-evaluation-only (NVIDIA licence); the rest are MIT/Apache (see README). Don't add models without noting licence implications, and when a model changes, re-upload it with its licence to a new `models-vN` release and point `mirrors` in `models.json` at it.

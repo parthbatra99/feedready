@@ -111,9 +111,9 @@ Claude Code runs an installed copy of the plugin, not this repo, so a change onl
 
 4. If you touched `swift/feedready_engine.swift`, rerun `setup.sh`. Until you do, `doctor` reports the engine as stale.
 5. Run `/reload-plugins` in Claude Code.
-6. Rebuild and re-upload the phone zip with `./build_zip.sh`.
+6. Push to `main`. claude.ai installs the plugin from this repo's marketplace and picks up the change when it syncs. Only people who uploaded the standalone skill need a fresh `./build_zip.sh` upload.
 
-To try the phone path on the Mac, set `FEEDREADY_NO_ENGINE=1`. That hides the Swift engine, so rendering falls back to numpy and detection to `portable.py`. For a faithful sandbox, use a fresh venv with only numpy and Pillow and a scratch `HOME`, then run `feedready.py doctor` and `feedready.py bootstrap all` from the unzipped bundle.
+To try the phone path on the Mac, set `FEEDREADY_NO_ENGINE=1`. That hides the Swift engine, so rendering falls back to numpy and detection to `portable.py`. For a faithful sandbox, use a fresh venv with only numpy and Pillow and a scratch `HOME`, then run `feedready.py doctor` and `feedready.py bootstrap all` from `skills/feedready/`.
 
 ## Tests
 
