@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import lib
 
-SUITES = ("units", "docs", "render", "engine", "golden", "corpus", "suggest", "eval")
+SUITES = ("units", "docs", "render", "engine", "portable", "golden", "corpus", "suggest", "eval")
 
 
 def main():

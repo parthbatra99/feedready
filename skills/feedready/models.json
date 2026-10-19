@@ -1,0 +1,69 @@
+{
+  "mirrors": ["https://github.com/dataguyofprocol/feedready/releases/download/models-v1"],
+  "models": {
+    "segformer": {
+      "what": "SegFormer-B0 ADE20K scene segmentation",
+      "licence": "NVIDIA source code licence, non-commercial",
+      "notice": "licensed for research or evaluation use only (NVIDIA Source Code License)",
+      "files": [
+        {"path": "segformer_b0_ade_q.onnx", "bytes": 4418863, "sha256": "9a98d6daf3d926869ab8cc4c2ed7374a2bc23b889bb7ca3b0915d15e3c4756bb",
+         "url": "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/onnx/model_quantized.onnx"},
+        {"path": "segformer_config.json", "bytes": 6957, "sha256": "435799652b2b64c3e422dea20fed4c59651dae9f0e291fd885e9e067fee0ce2a",
+         "url": "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/config.json"}
+      ]
+    },
+    "edgetam": {
+      "what": "EdgeTAM promptable object segmentation",
+      "licence": "Apache-2.0",
+      "files": [
+        {"path": "edgetam/vision_encoder.onnx", "bytes": 192225, "sha256": "ed068218eba96760fe02d04ce899c449660ac813a088d80ed7f42c8bb01e7cec",
+         "url": "https://huggingface.co/onnx-community/EdgeTAM-ONNX/resolve/9c77c7bff7fd0f3079585fa17af7f730ddc531ed/onnx/vision_encoder.onnx"},
+        {"path": "edgetam/vision_encoder.onnx_data", "bytes": 19532576, "sha256": "21e75dba7077dfcb53e8c9a6e99977156f2240ff3f1f9cddc43d66aa1ecb528e",
+         "url": "https://huggingface.co/onnx-community/EdgeTAM-ONNX/resolve/9c77c7bff7fd0f3079585fa17af7f730ddc531ed/onnx/vision_encoder.onnx_data"},
+        {"path": "edgetam/prompt_encoder_mask_decoder.onnx", "bytes": 213114, "sha256": "d3668299ec3edf70fbb139ec642b54bf3d4be453fd1b688a6b5938e0856fe546",
+         "url": "https://huggingface.co/onnx-community/EdgeTAM-ONNX/resolve/9c77c7bff7fd0f3079585fa17af7f730ddc531ed/onnx/prompt_encoder_mask_decoder.onnx"},
+        {"path": "edgetam/prompt_encoder_mask_decoder.onnx_data", "bytes": 20958208, "sha256": "dfa2125e30d08d388732f20c18fb63ab0f0f590cd270eb307f0c2b65919d1be8",
+         "url": "https://huggingface.co/onnx-community/EdgeTAM-ONNX/resolve/9c77c7bff7fd0f3079585fa17af7f730ddc531ed/onnx/prompt_encoder_mask_decoder.onnx_data"}
+      ]
+    },
+    "migan": {
+      "what": "MI-GAN inpainting",
+      "licence": "MIT (training data research-only)",
+      "files": [
+        {"path": "migan_pipeline_v2.onnx", "bytes": 28079181, "sha256": "6f1f3530a1a2324b19752018ce756088b07973cda8d7d890034ace5c8a48c40b",
+         "url": "https://huggingface.co/andraniksargsyan/migan/resolve/406830d0fa60666da0071c342ad2fbc8f30c5c64/migan_pipeline_v2.onnx"}
+      ]
+    },
+    "yunet": {
+      "what": "YuNet face detection with eye landmarks",
+      "licence": "MIT",
+      "files": [
+        {"path": "yunet_2023mar.onnx", "bytes": 232589, "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+         "url": "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx"}
+      ]
+    },
+    "u2netp": {
+      "what": "U2-Net-p salient object detection",
+      "licence": "Apache-2.0",
+      "files": [
+        {"path": "u2netp.onnx", "bytes": 4574861, "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
+         "url": "https://huggingface.co/BritishWerewolf/U-2-Netp/resolve/7112208dbac3a3642496c8d54e2f0f9bb3dc1dc8/onnx/model.onnx"}
+      ]
+    }
+  },
+  "features": {
+    "people": {"models": ["yunet", "u2netp", "segformer", "edgetam"], "packages": ["onnxruntime"],
+               "gives": "person, subject, background and face masks, face-aware diagnoses and crops"},
+    "segment": {"models": ["segformer"], "packages": ["onnxruntime"], "gives": "sky, mountain, water and other scene masks"},
+    "object": {"models": ["edgetam"], "packages": ["onnxruntime"], "gives": "object masks from a box or points"},
+    "heal": {"models": ["migan"], "packages": ["onnxruntime"], "gives": "object removal"},
+    "heic": {"models": [], "packages": ["pillow-heif"], "gives": "HEIC/HEIF photos"},
+    "opencv": {"models": [], "packages": ["opencv-contrib-python-headless"],
+               "gives": "grabcut refine, sharper mask edges, distraction finding, 16-bit working copy"}
+  },
+  "packages": {
+    "onnxruntime": {"module": "onnxruntime", "spec": "onnxruntime>=1.20"},
+    "pillow-heif": {"module": "pillow_heif", "spec": "pillow-heif>=1.0"},
+    "opencv-contrib-python-headless": {"module": "cv2.ximgproc", "spec": "opencv-contrib-python-headless>=4.10"}
+  }
+}

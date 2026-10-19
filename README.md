@@ -57,7 +57,7 @@ claude plugin marketplace add dataguyofprocol/feedready
 claude plugin install feedready@feedready
 ```
 
-Then attach a photo in any Claude Code session and say "make this insta ready". On first use Claude checks what's missing and asks before it runs setup, which builds the engine and downloads the models. Finished photos land in `~/Pictures/feedready/`.
+Then attach a photo in any Claude Code session and say "make this insta ready". On first use Claude runs setup, which builds the engine and downloads the models the photo needs, and tells you what it fetched. Finished photos land in `~/Pictures/feedready/`.
 
 To update later, run `claude plugin marketplace update feedready && claude plugin update feedready@feedready`.
 
@@ -71,6 +71,7 @@ To update later, run `claude plugin marketplace update feedready && claude plugi
 | SegFormer-B0 (`--segformer`) | 4.4 MB | sky, mountain, water and tree masks |
 | EdgeTAM (`--models`) | 41 MB | object masks |
 | MI-GAN (`--models`) | 28 MB | object removal |
+| YuNet + U²-Net-p (`--models`) | 5 MB | the portable face and subject path (tests, and machines without Vision) |
 
 Setup is safe to rerun. It ends with a `doctor` report; you're done when it says `"tier": "mac"` and `"missing": []`.
 
@@ -89,15 +90,19 @@ To run setup yourself, or to work on feedready from a clone, see [CONTRIBUTING.m
 
 ## On your phone
 
-A lighter version runs as an uploaded skill in the claude.ai app. It renders with numpy and has no models, so a few edits stay on the Mac. Ask for one and Claude says so instead of faking it.
+The same skill runs as an uploaded skill in the claude.ai app. It renders with numpy instead of Core Image. Small portable models stand in for Apple Vision: YuNet for faces and eyes, U²-Net-p for the subject, SegFormer + EdgeTAM for people. The first time a chat needs a model, Claude downloads it into that chat's sandbox (Anthropic's bandwidth, not your phone's) and says what it fetched.
 
 | | Mac | Phone |
 |---|:---:|:---:|
 | Crops, Lightroom-style sliders, looks | ✅ | ✅ |
 | Light and colour reads, recrop suggestions | ✅ | ✅ |
 | Shape, brightness and colour masks | ✅ | ✅ |
-| Person, face, sky and scenery masks | ✅ | |
-| Masks for any object, and object removal | ✅ | |
+| Person, face and subject masks | ✅ Vision | ✅ first use downloads ~50 MB |
+| Sky and scenery masks | ✅ | ✅ first use downloads 4.4 MB |
+| Masks for any object | ✅ | ✅ first use downloads 41 MB |
+| Object removal | ✅ | ✅ first use downloads 28 MB |
+
+The portable masks track Vision closely but not exactly: across the test corpus the median overlap is 0.83 for people and 0.88 for subjects. Each claude.ai chat starts with a clean sandbox, so downloads repeat per chat. If your sandbox blocks the download, Claude names the files: attach them to the chat and it installs them from there, checking each one's hash.
 
 <details>
 <summary><b>Set it up</b></summary>
@@ -134,7 +139,8 @@ Agents with their own folder, such as `.agent/skills/` in a project, get the sam
 | `needs SegFormer` or `object masks need … EdgeTAM` | Ask Claude to rerun setup with `--segformer --models` |
 | A mask spills onto the wrong area | Check the `masks` contact sheet. Subtract `person` or `sky`, tighten the object box, or add `exclude` points. |
 | `notes` calls an object mask low-confidence | The box is probably catching two things. Tighten it or add a point inside the object. |
-| HEIC fails on the phone | Send a JPEG. The claude.ai sandbox may not read HEIC. |
+| HEIC fails on the phone | Let Claude run `bootstrap heic`, or send a JPEG. |
+| `bootstrap` can't download on the phone | Ask Claude to run `probe`. Allow the blocked domain (huggingface.co, pypi.org) in your claude.ai code-execution network settings, or attach the model files it lists and let it rerun with `--from`. |
 | You want a clean slate for a photo | Delete its folder in `~/.cache/feedready/work/` |
 
 </details>
@@ -142,18 +148,22 @@ Agents with their own folder, such as `.agent/skills/` in a project, get the sam
 <details>
 <summary><b>Model licences</b></summary>
 
-| Model | Licence |
-|---|---|
-| EdgeTAM | Apache-2.0 |
-| MI-GAN | MIT (training data is research-only) |
-| SegFormer-B0 | NVIDIA source licence, non-commercial |
+| Model | Licence | Used for |
+|---|---|---|
+| SegFormer-B0 | [NVIDIA Source Code License](https://github.com/NVlabs/SegFormer/blob/master/LICENSE), non-commercial: research or evaluation only | sky and scenery masks; finding people off the Mac |
+| EdgeTAM | Apache-2.0 | object masks; refining people and subjects off the Mac |
+| MI-GAN | MIT (its training data is research-only) | object removal |
+| YuNet | MIT | faces and eyes off the Mac |
+| U²-Net-p | Apache-2.0 | the subject off the Mac |
 
-That's fine for your own posts. Check them before using feedready commercially.
+SegFormer's licence is the strict one. It allows use only "for research or evaluation purposes", which rules out commercial work and may not cover everyday posting either. Read it before relying on sky, scenery or (off the Mac) person masks. Everything else works without it.
+
+`bootstrap` downloads each model from Hugging Face, or from this repo's [`models-v1` release](https://github.com/dataguyofprocol/feedready/releases/tag/models-v1) when Hugging Face is blocked. The release holds unmodified copies with each model's licence beside it.
 
 </details>
 
 ## Licence
 
-The code is MIT — see [LICENSE](LICENSE). The models `setup.sh` downloads keep their own licences; check the table above before using them commercially.
+The code is MIT — see [LICENSE](LICENSE). The models `setup.sh` and `bootstrap` download keep their own licences, listed above; SegFormer's is limited to research or evaluation.
 
 Want to drive the engine yourself, read the recipe format, gate a taste change with the blind wow eval, or change the skill? See [CONTRIBUTING.md](CONTRIBUTING.md).

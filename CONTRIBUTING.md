@@ -72,7 +72,7 @@ flowchart LR
     M --> X["<b>prepass</b><br/>develop.py"]
     X --> E{"Swift engine<br/>built?"}
     E -->|"yes (Mac)"| C["Core Image render"]
-    E -->|"no (phone)"| N["numpy render"]
+    E -->|"no (phone)"| N["numpy render<br/>portable.py stands in for Vision"]
     C --> O(["version or export"])
     N --> O
     O --> V["<b>critique</b> + visuals<br/>critique.py, review.py"]
@@ -89,7 +89,9 @@ All paths are under `skills/feedready/`:
 | `scripts/review.py` | everything you look at: grid, mask sheet, compare, edit cards, edit map, board, and the HTML review page |
 | `scripts/diagnose.py` | the photo `profile` and the checks behind every finding (exposure, subject vs background, face vs background, face, skin-aware colour cast, haze, sky, bright distractions, headroom and crop). Add a check as one function in `CHECKS`. |
 | `scripts/masks.py` | mask specs to masks, from simple shapes to EdgeTAM objects, plus combinators and edge refinement |
-| `scripts/detect.py` | model access and per-photo caching. Every model path lives here. |
+| `scripts/detect.py` | model access, per-photo caching, and which vision backend runs (Apple or portable). Every model path lives here. |
+| `scripts/portable.py` | the portable stand-in for Vision: YuNet faces and pupils, U²-Net-p saliency, and SegFormer/U²-Net-p regions refined by EdgeTAM into `person.png` and `subject.png`. It writes the same `vision.json` the engine does, so nothing downstream knows which ran. |
+| `scripts/bootstrap.py` + `models.json` | the one list of models (URL pinned to a revision, size, sha256, licence) and which feature needs which. `setup.sh`, `doctor`, `bootstrap` and `probe` all read it. Each file downloads from its `url`, then from each base in `mirrors` + its asset name (path with `/` as `-`), until one matches the hash. `scripts/bootstrap.py assets DIR` stages every installed model under those asset names, ready to upload as a release. To add a model, add it there and note its licence in the README. |
 | `scripts/develop.py` | sliders and looks to engine ops, and the prepass: dehaze, clarity and texture via a guided filter, heal via MI-GAN |
 | `swift/feedready_engine.swift` | decode, Vision masks and the Core Image render |
 
@@ -111,6 +113,8 @@ Claude Code runs an installed copy of the plugin, not this repo, so a change onl
 5. Run `/reload-plugins` in Claude Code.
 6. Rebuild and re-upload the phone zip with `./build_zip.sh`.
 
+To try the phone path on the Mac, set `FEEDREADY_NO_ENGINE=1`. That hides the Swift engine, so rendering falls back to numpy and detection to `portable.py`. For a faithful sandbox, use a fresh venv with only numpy and Pillow and a scratch `HOME`, then run `feedready.py doctor` and `feedready.py bootstrap all` from the unzipped bundle.
+
 ## Tests
 
 ```bash
@@ -125,6 +129,7 @@ Run it from the repo root; it must end with `ALL PASSED`. The suites run in orde
 | `docs` | `reference/recipe.md`, `reference/vibes.md` and `SKILL.md` stay in sync with the code, and the Swift engine handles every op `build_ops` emits |
 | `render` | every slider's direction on both renderers, the CLI loop, diagnostics, object masks, heal, `doctor`/`masks`, and the error paths |
 | `engine` | Core Image vs numpy parity per op, engine determinism, and the render-plan schema |
+| `portable` | the portable vision backend against Apple Vision on the corpus: face boxes, pupils, person and subject masks, and the `vision.json` schema |
 | `golden` | pixel goldens for the numpy tier on synthetic fixtures, stored in `tests/golden/` |
 | `corpus` | every corpus photo survives a numpy-tier render |
 | `suggest` | the diagnosis pipeline on the labeled corpus (`tests/labels.json`): required and forbidden findings, step directions, genres, face counts |

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from detect import MIGAN, migan_available
+from detect import MIGAN, MissingCapability, bootstrap_hint, migan_available
 from imaging import (
     cv2,
     gaussian,
@@ -337,16 +337,25 @@ def dehaze(img: np.ndarray, amount: float) -> np.ndarray:
     return img + (clear - img) * amount
 
 
+def heal_backend() -> str | None:
+    if migan_available():
+        return "migan"
+    if cv2 is not None and hasattr(cv2, "xphoto"):
+        return "opencv"
+    return None
+
+
 def heal(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     hole = 1 - min_filter(1 - (mask > 0.3).astype(np.float32), 2)
     u8 = to_u8(img)
-    if migan_available():
+    backend = heal_backend()
+    if backend == "migan":
         fixed = _migan(u8, hole)
-    elif cv2 is not None and hasattr(cv2, "xphoto"):
+    elif backend == "opencv":
         fixed = np.zeros_like(u8)
         cv2.xphoto.inpaint(u8, (1 - hole).astype(np.uint8), fixed, cv2.xphoto.INPAINT_FSR_FAST)
     else:
-        raise RuntimeError("heal needs opencv (Mac tier)")
+        raise MissingCapability(f"heal needs MI-GAN or opencv-contrib: {bootstrap_hint('heal')}")
     soft = gaussian(hole, 2)[..., None]
     return img * (1 - soft) + fixed.astype(np.float32) / 255 * soft
 

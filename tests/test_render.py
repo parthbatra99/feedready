@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image, JpegImagePlugin
 
 import lib
+import bootstrap
 import critique
 import masks
 from detect import Scene, edgetam_available, migan_available
@@ -275,12 +276,19 @@ def doctor_and_masks(tmp, src):
     import feedready
 
     report = feedready.cmd_doctor(None)
-    lib.check("doctor reports the tier and features",
-              set(report) == {"tier", "python", "engine (Core Image + Vision)", "opencv", "segformer scene masks",
-                              "object masks (EdgeTAM)", "heal model (MI-GAN)", "output_dir", "heic", "missing"},
+    lib.check("doctor reports the tier and capabilities",
+              set(report) == {"tier", "python", "renderer", "capabilities", "output_dir", "missing"},
               str(sorted(report)))
+    lib.check("doctor lists every bootstrap feature",
+              set(report["capabilities"]) == set(bootstrap.manifest()["features"]), str(report["capabilities"]))
     lib.check("doctor tier matches the engine", report["tier"] == feedready.tier()
               and isinstance(report["missing"], list))
+    with lib.basic_tier(), lib.no_models():
+        missing = feedready.cmd_doctor(None)["missing"]
+    lib.check("doctor says how to get every missing feature",
+              all(any(m.startswith(f"{f}:") and "run `" in m and "MB" in m for m in missing)
+                  for f in ("segment", "object", "heal")),
+              str(missing))
 
     recipe = json.dumps({"steps": [{"name": "whole", "adjust": {"exposure": 0.2}},
                                    {"name": "left", "mask": {"type": "linear", "start": [0, 0.5], "end": [0.5, 0.5]},
@@ -292,6 +300,27 @@ def doctor_and_masks(tmp, src):
               set(out) == {"contact_sheet", "mask_coverage", "notes"} and out["mask_coverage"][0] is None
               and 0 < out["mask_coverage"][1] < 1 and Path(out["contact_sheet"]).exists(),
               str(out["mask_coverage"]))
+    saved_missing, saved_bootstrap = bootstrap.missing, bootstrap.bootstrap
+    calls = []
+    bootstrap.bootstrap = lambda features, source=None: calls.append(features) or {}
+    try:
+        bootstrap.missing = lambda feature: {"models": [], "packages": [], "mb": 0}
+        lib.check("inspect --fetch downloads nothing when the models are there",
+                  feedready._fetch("segment", "why") is None and not calls)
+        bootstrap.missing = lambda feature: {"models": ["big"], "packages": [], "mb": 150.0}
+        big = feedready._fetch("people", "why")
+        lib.check("inspect --fetch won't auto-download past the size limit",
+                  big["ok"] is False and "limit" in big["error"] and not calls, str(big))
+    finally:
+        bootstrap.missing, bootstrap.bootstrap = saved_missing, saved_bootstrap
+    with lib.basic_tier(), lib.no_models(), lib.isolated_work(), lib.portable_tier():
+        out = feedready.cmd_inspect(type("Args", (), {"image": str(src)})())
+    unlock = {u["feature"]: u for u in out.get("unlock", [])}
+    lib.check("inspect offers the models that would sharpen its read",
+              {"people", "segment"} <= set(unlock) and all("MB download" in u["command"] for u in
+                                                           (unlock["people"], unlock["segment"])), str(unlock))
+    lib.check("inspect's skipped checks name the command that adds them",
+              all("run `" in s for s in out["diagnostics"]["skipped"]), str(out["diagnostics"]["skipped"]))
     with lib.basic_tier():
         args = type("Args", (), {"recipe": json.dumps({"steps": []}), "image": str(src)})()
         lib.check("masks rejects a recipe with no steps",
@@ -330,6 +359,15 @@ def error_paths(src):
     e = apply_error({"steps": [{"mask": {"type": "torus"}, "adjust": {"exposure": 1}}]})
     lib.check("unknown mask type fails with tiered json",
               "unknown mask type" in e.get("error", "") and e.get("tier") == "basic", str(e))
+    with lib.no_models():
+        for spec in ({"type": "person"}, {"type": "subject"}, {"type": "background"}, {"type": "face"},
+                     {"type": "segment", "class": "sky"}, {"type": "sky"}, {"type": "object", "box": [0.1, 0.1, 0.5, 0.5]},
+                     {"type": "brush", "dots": [[0.5, 0.5]], "refine": "grabcut"}):
+            e = apply_error({"steps": [{"mask": spec, "adjust": {"exposure": 0.2}}]})
+            lib.check(f"{spec['type']}{' grabcut' if 'refine' in spec else ''} mask without its models refuses with a fix",
+                      "run `" in e.get("error", "") and e.get("tier") == "basic", str(e))
+        e = apply_error({"steps": [{"mask": {"type": "brush", "dots": [[0.5, 0.5]]}, "adjust": {"heal": True}}]})
+        lib.check("heal without its models refuses with a fix", "run `" in e.get("error", ""), str(e))
     e = apply_error(next_version(src))
     lib.check("unknown version fails with json", f"no version {next_version(src)}" in e.get("error", ""), str(e))
     bad = lib.tmp() / "bad.json"

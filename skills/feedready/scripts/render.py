@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 import develop
-from detect import run_engine
+from detect import MissingCapability, run_engine
 from imaging import resize as resize_arr
 from imaging import save_jpeg, save_mask, save_png16, to_u8
 
@@ -45,7 +45,10 @@ def prepass(img, steps, built):
         if adj.get("heal"):
             if m is None:
                 raise fail("heal needs a mask (brush dots over the spots)")
-            img = develop.heal(img, m)
+            try:
+                img = develop.heal(img, m)
+            except MissingCapability as e:
+                raise fail(str(e))
             changed = True
         if d := adj.get("dehaze"):
             img = img + (develop.dehaze(img, d / 100) - img) * weight

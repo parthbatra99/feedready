@@ -152,12 +152,44 @@ def mac_tier() -> bool:
 def basic_tier():
     import feedready
 
-    saved_engine, saved_tier = detect.ENGINE, feedready.tier
-    detect.ENGINE, feedready.tier = Path("/nonexistent"), (lambda: "basic")
+    saved_engine, saved_yunet, saved_tier = detect.ENGINE, detect.YUNET, feedready.tier
+    detect.ENGINE, detect.YUNET, feedready.tier = Path("/nonexistent"), Path("/nonexistent"), (lambda: "basic")
     try:
         yield
     finally:
-        detect.ENGINE, feedready.tier = saved_engine, saved_tier
+        detect.ENGINE, detect.YUNET, feedready.tier = saved_engine, saved_yunet, saved_tier
+
+
+@contextmanager
+def no_models():
+    import develop
+    import masks
+
+    names = ("SEGFORMER", "EDGETAM_ENCODER", "MIGAN", "YUNET")
+    saved = {n: getattr(detect, n) for n in names}
+    saved_cv2 = develop.cv2, masks.cv2
+    for n in names:
+        setattr(detect, n, Path("/nonexistent"))
+    develop.cv2 = masks.cv2 = None
+    try:
+        yield
+    finally:
+        for n, v in saved.items():
+            setattr(detect, n, v)
+        develop.cv2, masks.cv2 = saved_cv2
+
+
+@contextmanager
+def portable_tier():
+    old = os.environ.get("FEEDREADY_NO_ENGINE")
+    os.environ["FEEDREADY_NO_ENGINE"] = "1"
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("FEEDREADY_NO_ENGINE", None)
+        else:
+            os.environ["FEEDREADY_NO_ENGINE"] = old
 
 
 def cli_stdout(cmd, *argv):

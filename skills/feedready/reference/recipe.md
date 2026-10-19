@@ -55,7 +55,7 @@ A recipe is JSON. Pass `masks`, `board`, `preview` or `apply` a file path, an in
 | `sharpen` | 0…150 | luminance only |
 | `hsl` | `{"blue": {"hue": -10, "sat": -20, "lum": 10}, …}` | bands: red, orange, yellow, green, aqua, blue, purple, magenta; each value -100…100 |
 | `curve` | `[[0,0],[0.25,0.22],[0.75,0.8],[1,1]]` | point curve on the photo's encoded values, sRGB or Display P3 (smooth, monotone) |
-| `heal` | `true` | removes whatever the step's mask covers and fills it from the surroundings (MI-GAN). Works for spots and whole objects, through any mask (brush, object). Add a small `grow` so the fill covers the edges. Mac only. |
+| `heal` | `true` | removes whatever the step's mask covers and fills it from the surroundings (MI-GAN). Works for spots and whole objects, through any mask (brush, object). Add a small `grow` so the fill covers the edges. Needs the `heal` capability. |
 
 Typical amounts for a post: ±0.3–0.7 exposure on a region, ±20–40 on most sliders, and 10–25 for dehaze and clarity.
 
@@ -75,13 +75,15 @@ Computed on the original photo.
 - `{"type": "luminance", "min": 0.6, "max": 1, "soft": 0.08}`
 - `{"type": "color", "hue": 210, "range": 25, "soft": 15, "min_sat": 0.08}`: hue in degrees (red 0, orange 30, yellow 60, green 120, aqua 180, blue 240, purple 280, magenta 320).
 
-### Detected (Mac only)
+### Detected
 
-- `{"type": "person"}`: everyone in the photo (Vision person segmentation).
-- `{"type": "subject"}`: the main subject(s), which can be any object (Vision subject lift). `{"type": "background"}` is the inverse.
-- `{"type": "face", "part": "face" | "eyes", "index": 0, "scale": 1.0}`: built from Vision face points. Check it on the contact sheet, because covered or profile faces mislead it.
+These need a capability from `doctor`: `people` for person, subject, background and face; `segment` for segment and sky; `object` for object. On a Mac they come from Vision and `setup.sh`; elsewhere from `bootstrap`.
+
+- `{"type": "person"}`: everyone in the photo (Vision person segmentation, or SegFormer people refined by EdgeTAM).
+- `{"type": "subject"}`: the main subject(s), which can be any object (Vision subject lift, or U²-Net-p saliency refined by EdgeTAM). `{"type": "background"}` is the inverse.
+- `{"type": "face", "part": "face" | "eyes", "index": 0, "scale": 1.0}`: built from detected face points (Vision, or YuNet). Check it on the contact sheet, because covered or profile faces mislead it.
 - `{"type": "segment", "class": "mountain"}`, or a list of classes: SegFormer ADE20K. Friendly names: sky, mountain(s), tree(s), vegetation, water, ground, building, rock. Any ADE20K label also works (e.g. grass, sea, sand, road, field, hill). Edges are snapped to the photo; set `"edge_refine": false` to skip that.
-- `{"type": "sky"}`: SegFormer sky when the model is available, otherwise a heuristic.
+- `{"type": "sky"}`: SegFormer sky, the same as `{"type": "segment", "class": "sky"}`.
 - `{"type": "object", "box": [x0, y0, x1, y1], "points": [[x, y], …], "exclude": [[x, y], …]}`: the object the prompt points at (EdgeTAM), for anything without a dedicated type. Give a `box`, at least one `points` click, or both. `exclude` clicks push look-alike neighbours out. A tight box from the grid works best. `notes` in the `masks` and `apply` output flags a low-confidence result.
 
 ### Combine
@@ -94,7 +96,7 @@ These work on any mask.
 
 - `"invert": true`
 - `"grow": ±0.01`: dilate or erode by that fraction of the short side.
-- `"refine": "edges"` (guided snap to edges) or `"grabcut"` (turns a rough polygon or brush into a clean object outline; Mac only).
+- `"refine": "edges"` (guided snap to edges) or `"grabcut"` (turns a rough polygon or brush into a clean object outline; needs `opencv`).
 - `"feather": 0.01`: extra blur.
 - `"strength": 0.5`: scales how strongly the step applies through this mask.
 

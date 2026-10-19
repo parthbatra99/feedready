@@ -22,7 +22,7 @@ On a Mac the engine uses:
 - EdgeTAM for a mask of any object you box or click.
 - MI-GAN for object removal.
 
-Elsewhere (claude.ai, or any machine without the engine) a numpy fallback renders global edits, looks, crops and geometric masks.
+Elsewhere (claude.ai, or any machine without the engine) numpy renders the same adjustments, and small portable models stand in for Vision: YuNet for faces and eyes, U²-Net-p plus EdgeTAM for the subject, SegFormer plus EdgeTAM for people. `bootstrap` installs them on first use in a session, so every feature works there too.
 
 Run every command from this skill's base directory: `<base>/run.sh <cmd>` on a Mac, `python3 <base>/scripts/feedready.py <cmd>` on claude.ai. `setup.sh` sits beside `run.sh`. Every command prints JSON.
 
@@ -32,8 +32,10 @@ To show the user an image, use your tool for sending files (SendUserFile in the 
 
 | command | what it does |
 |---|---|
-| `doctor` | tier and anything missing |
-| `inspect PHOTO` | grid, stats, `profile` (genre, hero), measured `findings`, `previous_versions` |
+| `doctor` | tier, `capabilities`, and how to get anything `missing` |
+| `probe` | what this machine has: Python, packages, network, disk (for diagnosing `bootstrap`) |
+| `bootstrap FEATURE… [--from DIR]` | installs packages and models for `people`, `segment`, `object`, `heal`, `heic`, `opencv` or `all`; `--from` installs model files the user attached instead of downloading |
+| `inspect PHOTO --fetch` | downloads the models this photo needs, then grid, stats, `profile` (genre, hero), measured `findings`, `previous_versions`, and `fetched` |
 | `board PHOTO R1 R2 …` | the original plus each recipe side by side, with `too_similar` warnings |
 | `masks RECIPE PHOTO` | contact sheet of every step's mask |
 | `preview RECIPE PHOTO --note "…"` | a screen-size render saved as the next version `vN`, plus visuals and a critique |
@@ -42,20 +44,26 @@ To show the user an image, use your tool for sending files (SendUserFile in the 
 A RECIPE is a JSON file, an inline JSON string or a saved version (`v3`). Schema: `reference/recipe.md`. Taste, directions, note vocabulary and the review checklist: `reference/vibes.md`. Read vibes.md before your first board.
 
 ## 0. Check the tier (first use in a session)
-Run `run.sh doctor`.
-- **`tier: mac` with nothing in `missing`:** full feature set.
-- **`missing` lists something:** ask the user before running `<base>/setup.sh`, and say what it downloads:
-  - Python packages, ~90 MB from PyPI.
-  - `--segformer`: the 4.4 MB scene model.
-  - `--models`: the 69 MB object mask and heal models.
+Run `doctor`. `capabilities` says what works right now:
 
-  Compiling the Swift engine downloads nothing. Never download a model or package without a yes.
-- **`tier: basic`** (claude.ai, phone, or no engine):
-  - Works: global sliders, looks, crops, and radial, linear, brush, polygon, luminance and colour masks.
-  - Doesn't work: person, subject, background, face, segment and object masks, and the `heal` adjustment. For those, say "this one's best done on the Mac". Don't fake it with a poor approximation.
+| capability | gives |
+|---|---|
+| `people` | `person`, `subject`, `background` and `face` masks, plus face-aware findings, crops and critique (`apple` on a Mac, `portable` elsewhere) |
+| `segment` | `segment` and `sky` masks, plus scene-aware findings |
+| `object` | `object` masks |
+| `heal` | the `heal` adjustment |
+| `heic` | HEIC photos |
+| `opencv` | `grabcut` refine, sharper mask edges, distraction finding |
+
+Global sliders, looks, crops, and radial, linear, brush, polygon, luminance and colour masks always work.
+
+Downloads don't need a yes. Fetch what the work needs, then say what you fetched in one line of your next message. Ask first only when a single download is over 100 MB.
+- **Engine (Mac):** if `missing` lists the engine, run `<base>/setup.sh` before anything else. It compiles the Swift engine (no download) and installs ~90 MB of Python packages. Say so in a line.
+- **Models:** `inspect --fetch` (step 1) downloads what this photo needs: the scene model always, and the people models off the Mac when someone is in the frame. Anything a later edit needs (`object` masks, `heal`, HEIC) comes from the command in the `MissingCapability` error. Run it, mention it in a line, and carry on. Each claude.ai conversation starts clean, so this happens once per conversation.
+- **If a download fails** (`fetched[].ok` is false, or `bootstrap` reports `fallback`), run `probe` and tell the user what's blocked. Usually it's the sandbox's network setting: they can allow the domain in their settings, or attach the model files named in `still_needed` to the chat and you rerun with `--from` the uploads folder (`/mnt/user-data/uploads` on claude.ai). Hashes are checked, so renamed files are fine. Meanwhile, work with geometric masks and say so. Don't fake it with a poor approximation.
 
 ## 1. Read the photo
-Run `run.sh inspect PHOTO`, then look at the `original` and `grid` images. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid, never by eye.
+Run `run.sh inspect PHOTO --fetch`, then look at the `original` and `grid` images. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid, never by eye.
 
 Form a photographer's read:
 - What the photo is about.
@@ -65,11 +73,13 @@ Form a photographer's read:
 - What could make it special. `opportunities` sits beside the findings: measured strengths — the light's character (`profile.light`), where the eye actually lands, colour pairs worth pushing, separation worth leaning into. Each has `evidence` and a `move_hint`. This is where the wow comes from.
 - The other photos inside it. `recrops` lists up to three measured alternative framings — a square on the face, a vertical, a tighter cut on the busiest region — each with a ready `crop` box and the evidence for why it works.
 
+If `fetched` is there, start your reply with one line saying what you downloaded and why, in the user's words: "Grabbed the 4.4 MB scene model so the sky and ridge edits follow the skyline." If an entry carries a `licence` note, add it in the same line, e.g. "(it's licensed for research or evaluation use)". Never route around a missing capability silently.
+
 If `previous_versions` is there, you've edited this photo before. Offer to continue from the latest version or start fresh.
 
 If `taste` is there, it's this user's demonstrated taste across past sessions: favourite looks and their amounts, how strong the sliders run, vignette and destination habits. Lean the board that way — while still answering this photo's own opportunities.
 
-If `profile.signals.face_readable` is false, the face is covered or too dark to read as skin. The face findings are skipped, and Vision's face and eye points are unreliable, so place any face or eye mask from a zoomed grid instead of `type: face`.
+If `profile.signals.face_readable` is false, the face is covered or too dark to read as skin. The face findings are skipped, and the detected face and eye points are unreliable, so place any face or eye mask from a zoomed grid instead of `type: face`.
 
 ## 2. Brief: agree the vibe
 You need two things:
@@ -170,12 +180,12 @@ People, faces, sky and broad scenery have their own types: `person`, `face`, `sk
 Fix any mask that spills or misses, at most 2 rounds per mask. Common fixes:
 - Subtract `person` from scenery masks, and `sky` from mountain masks.
 - Intersect with a `linear` band to limit the vertical extent, or with `luminance` to hit only bright or dark parts.
-- Intersect or subtract an `object` mask when a Vision or SegFormer region is wrong.
-- Use an explicit `radial` from the grid when Vision's face points miss. Covered or profile faces often fool it.
+- Intersect or subtract an `object` mask when a detected region is wrong.
+- Use an explicit `radial` from the grid when the detected face points miss. Covered or profile faces often fool it.
 
 ## Notes
 - Prefer subtle: these are Lightroom-scale sliders, and ±20–40 is usually plenty. Dehaze and clarity on a smooth sky bring out streaks, so mask them to the scenery.
 - Keep the photo's mood unless the brief changes it.
 - Coordinates are fractions of the original photo, before the crop. The crop is applied last.
 - Presets only set the crop aspect; they never resize.
-- Inputs: JPEG, PNG, HEIC (iPhone), TIFF, WebP. HEIC on claude.ai needs pillow-heif; otherwise ask for a JPEG.
+- Inputs: JPEG, PNG, HEIC (iPhone), TIFF, WebP. HEIC off the Mac needs `bootstrap heic`; otherwise ask for a JPEG.

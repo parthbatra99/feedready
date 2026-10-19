@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
+import importlib
 import json
 import os
 import re
@@ -13,7 +13,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import bootstrap
 import critique
+import develop
 import diagnose
 import recrops
 import masks as maskmod
@@ -23,27 +25,32 @@ from detect import (
     CACHE,
     MissingCapability,
     Scene,
+    bootstrap_hint,
     edgetam_available,
     engine_available,
     engine_stale,
-    migan_available,
     run_engine,
     segformer_available,
+    vision_backend,
 )
 from imaging import cv2, icc_profile, is_p3, load_rgb, luma, save_jpeg, save_png16
 
 USAGE = """feedready: render Claude's photo-edit recipes, version by version, and export a post-ready image.
 
-  feedready.py doctor
-  feedready.py inspect IMG                       grid overlay + stats + profile + findings (JSON)
+  feedready.py doctor                            tier, capabilities, and what's missing
+  feedready.py probe                             what this sandbox has: python, packages, network, disk
+  feedready.py bootstrap FEATURE... [--from DIR] install packages + models for people, segment, object, heal,
+                                                 heic, opencv or all (--from: verify files already uploaded)
+  feedready.py inspect IMG [--fetch]             grid overlay + stats + profile + findings (JSON); --fetch first
+                                                 downloads the models this photo needs (scene; people if present)
   feedready.py masks RECIPE IMG                  contact sheet of every step's mask
   feedready.py board IMG RECIPE [RECIPE ...]     original + each recipe side by side (directions, versions)
   feedready.py preview RECIPE IMG [--note TEXT]  screen-size render saved as the next version, with critique
   feedready.py apply RECIPE IMG [-o OUT]         full-resolution export + before/after compare
 
 RECIPE is a path to a JSON file, an inline JSON string (reference/recipe.md), or a
-saved version such as v3. Mac tier renders with Core Image + Vision (feedready-engine);
-elsewhere a numpy fallback renders the subset that needs no models.
+saved version such as v3. On a Mac, Core Image + Vision render and detect (feedready-engine);
+elsewhere numpy renders and the portable models (bootstrap) detect people, faces, scenes and objects.
 """
 
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
@@ -53,11 +60,20 @@ PREVIEW_EDGE = 1600
 SINGLE_EDGE = 900
 BOARD_EDGE = 900
 SIMILAR = 0.025
+FETCH_CAP_MB = 100
+PERSON_SHARE = 0.002
+INSPECT_GAINS = {
+    "people": "face, subject-balance and crop checks that know where people are; person, subject, background and face masks",
+    "segment": "haze and sky checks and the scene read behind the genre; sky and scenery masks that follow the horizon",
+    "opencv": "the distraction check and sharper mask edges",
+}
 VERSION = re.compile(r"[vV]\d+")
 
 
 def tier() -> str:
-    return "mac" if engine_available() and sys.platform == "darwin" else "basic"
+    if engine_available():
+        return "mac"
+    return "portable" if vision_backend() == "portable" else "basic"
 
 
 def output_dir() -> Path:
@@ -76,7 +92,7 @@ def prepare(src: Path) -> tuple[Path, Path, np.ndarray]:
     work.mkdir(parents=True, exist_ok=True)
     working = work / "working.png"
     if not working.exists():
-        if tier() == "mac":
+        if engine_available():
             run_engine("decode", str(src), str(working))
         else:
             icc = icc_profile(src)
@@ -177,45 +193,106 @@ def stats(img: np.ndarray) -> dict:
     }
 
 
+def capabilities() -> dict:
+    return {
+        "people": vision_backend() or False,
+        "segment": segformer_available(),
+        "object": edgetam_available(),
+        "heal": develop.heal_backend() or False,
+        "heic": engine_available() or bootstrap.has_module("pillow_heif"),
+        "opencv": bootstrap.has_module("cv2.ximgproc"),
+    }
+
+
+def _missing(caps: dict) -> list[str]:
+    out = []
+    mac = sys.platform == "darwin" and not os.environ.get("FEEDREADY_NO_ENGINE")
+    if mac and not engine_available():
+        out.append("engine: run setup.sh (compiles Swift, no download)")
+    elif engine_stale():
+        out.append("engine: built from an older version of this skill; rerun setup.sh (no download)")
+    for feature, have in caps.items():
+        if have or (mac and feature in ("people", "heic")):
+            continue
+        out.append(f"{feature}: {bootstrap_hint(feature)}: {bootstrap.manifest()['features'][feature]['gives']}")
+    return out
+
+
 def cmd_doctor(_args) -> dict:
-    report = {
+    caps = capabilities()
+    return {
         "tier": tier(),
         "python": sys.version.split()[0],
-        "engine (Core Image + Vision)": engine_available(),
-        "opencv": cv2 is not None,
-        "segformer scene masks": segformer_available(),
-        "object masks (EdgeTAM)": edgetam_available(),
-        "heal model (MI-GAN)": migan_available(),
+        "renderer": "core-image" if engine_available() else "numpy",
+        "capabilities": caps,
         "output_dir": str(output_dir()),
+        "missing": _missing(caps),
     }
-    report["heic"] = importlib.util.find_spec("pillow_heif") is not None or tier() == "mac"
-    missing = []
-    if sys.platform == "darwin" and not engine_available():
-        missing.append("engine: run setup.sh (compiles Swift, no download)")
-    elif engine_stale():
-        missing.append("engine: built from an older version of this skill; rerun setup.sh (no download)")
-    if not segformer_available():
-        missing.append("segformer: run setup.sh --segformer (4.4 MB download, ask first)")
-    if not edgetam_available():
-        missing.append("edgetam: run setup.sh --models (69 MB download, ask first)")
-    if not migan_available():
-        missing.append("migan: run setup.sh --models (69 MB download, ask first)")
-    if cv2 is None:
-        missing.append("opencv: grabcut refine unavailable, and heal too unless MI-GAN is installed")
-    report["missing"] = missing
-    return report
+
+
+def cmd_probe(_args) -> dict:
+    return bootstrap.probe()
+
+
+def cmd_bootstrap(args) -> dict:
+    source = Path(args.source).expanduser() if args.source else None
+    if source is not None and not source.is_dir():
+        return {"error": f"{source} is not a folder"}
+    out = bootstrap.bootstrap(args.features, source)
+    if "error" not in out:
+        out["capabilities"] = capabilities()
+    return out
+
+
+def _fetch(feature: str, why: str) -> dict | None:
+    need = bootstrap.missing(feature)
+    if not need["models"] and not need["packages"]:
+        return None
+    entry = {"feature": feature, "mb": need["mb"], "why": why}
+    if need["mb"] > FETCH_CAP_MB:
+        return {**entry, "ok": False, "error": f"over the {FETCH_CAP_MB} MB auto-download limit; ask first"}
+    result = bootstrap.bootstrap([feature])
+    entry["ok"] = result["ready"][feature]
+    if notes := bootstrap.notices(need["models"]):
+        entry["licence"] = notes
+    if not entry["ok"]:
+        entry["error"] = result["models"].get("error") or result["packages"].get("error")
+        if result.get("fallback"):
+            entry["fallback"] = result["fallback"]
+    return entry
+
+
+def _person_in_frame(scene: Scene) -> bool:
+    probs, labels = scene.segmentation()
+    idx = [i for i, label in enumerate(labels) if label.split(",")[0].strip() == "person"]
+    return bool(idx) and float((probs.argmax(0) == idx[0]).mean()) >= PERSON_SHARE
+
+
+def fetch_for(scene: Scene) -> list[dict]:
+    fetched = []
+    if done := _fetch("segment", "sky and scenery masks that follow the horizon, and the scene read behind the genre"):
+        fetched.append(done)
+    if not engine_available() and segformer_available() and _person_in_frame(scene):
+        if done := _fetch("people", "there's a person in the frame: person, subject and face masks"):
+            fetched.append(done)
+    importlib.invalidate_caches()
+    return fetched
 
 
 def cmd_inspect(args) -> dict:
     src = Path(args.image).expanduser()
     work, working, img = prepare(src)
     scene = Scene(work, working, img)
+    fetched = fetch_for(scene) if getattr(args, "fetch", False) else []
     out = {"work_dir": str(work), "size": [img.shape[1], img.shape[0]], "tier": tier(), "stats": stats(img)}
+    if fetched:
+        out["fetched"] = fetched
     out.update(_resolution(img, src))
     icc = wide_profile(working)
     out["color_space"] = "display-p3" if icc else "srgb"
     faces = []
-    if tier() == "mac":
+    if backend := vision_backend():
+        out["vision"] = backend
         v = scene.vision()
         faces = v.get("faces", [])
         out["faces"] = [{k: f.get(k) for k in ("box", "left_pupil", "right_pupil", "confidence")} for f in faces]
@@ -233,6 +310,10 @@ def cmd_inspect(args) -> dict:
     if opp["skipped"]:
         out["diagnostics"]["skipped"] += opp["skipped"]
     out["recrops"] = recrops.mine(scene)
+    caps = capabilities()
+    if not getattr(args, "fetch", False) and (unlock := [{"feature": f, "command": bootstrap_hint(f), "adds": gain}
+                                                         for f, gain in INSPECT_GAINS.items() if not caps[f]]):
+        out["unlock"] = unlock
     if numbers := version_numbers(work):
         index = version_index(work)
         out["previous_versions"] = [{"version": f"v{n}", "note": index.get(str(n), {}).get("note", "")} for n in numbers]
@@ -284,7 +365,7 @@ class Session:
         self.work, self.working, self.img = prepare(src)
         self.scene = Scene(self.work, self.working, self.img)
         self.icc = wide_profile(self.working)
-        self.engine = tier() == "mac"
+        self.engine = engine_available()
         self.stage = self.work / "stage"
         self.stage.mkdir(exist_ok=True)
 
@@ -399,8 +480,8 @@ def cmd_preview(args) -> dict:
         save_jpeg(before, before_path, 92, s.icc)
 
     tiny, singles, impacts = _singles(s, recipe, steps, built)
-    faces = _frame_faces(s.scene, crop, small.shape[1], small.shape[0]) if s.engine else []
-    person = _frame_person(s.scene, small, crop) if s.engine else None
+    faces = _frame_faces(s.scene, crop, small.shape[1], small.shape[0]) if vision_backend() else []
+    person = _frame_person(s.scene, small, crop) if vision_backend() else None
     verdict = critique.run(before, after, faces, person, recipe.get("vignette", 0), steps, impacts)
 
     compare = vdir / f"{tag}-compare.jpg"
@@ -477,8 +558,13 @@ def main():
     ap = argparse.ArgumentParser(description=USAGE, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor")
+    sub.add_parser("probe")
+    p = sub.add_parser("bootstrap")
+    p.add_argument("features", nargs="+")
+    p.add_argument("--from", dest="source")
     p = sub.add_parser("inspect")
     p.add_argument("image")
+    p.add_argument("--fetch", action="store_true")
     p = sub.add_parser("masks")
     p.add_argument("recipe")
     p.add_argument("image")
@@ -494,9 +580,13 @@ def main():
     p.add_argument("image")
     p.add_argument("-o", "--output")
     args = ap.parse_args()
-    handler = {"doctor": cmd_doctor, "inspect": cmd_inspect, "masks": cmd_masks, "board": cmd_board,
-               "preview": cmd_preview, "apply": cmd_apply}[args.cmd]
-    print(json.dumps(handler(args), indent=2))
+    handler = {"doctor": cmd_doctor, "probe": cmd_probe, "bootstrap": cmd_bootstrap, "inspect": cmd_inspect,
+               "masks": cmd_masks, "board": cmd_board, "preview": cmd_preview, "apply": cmd_apply}[args.cmd]
+    try:
+        result = handler(args)
+    except MissingCapability as e:
+        raise SystemExit(json.dumps({"error": str(e), "tier": tier()}))
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

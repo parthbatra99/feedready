@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -523,7 +524,91 @@ def test_cli_pure():
               and skin_mask(np.full((300, 300, 3), 0.1, np.float32), [0.3, 0.3, 0.7, 0.7]) is None)
 
 
+def test_mirrors(bootstrap):
+    import hashlib
+
+    mirror = lib.tmp() / "mirror"
+    mirror.mkdir(exist_ok=True)
+    payload = b"feedready mirror test"
+    (mirror / "sub-tiny.bin").write_bytes(payload)
+    entry = {"path": "sub/tiny.bin", "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(),
+             "url": (lib.tmp() / "nowhere" / "tiny.bin").as_uri()}
+    fake = {"mirrors": [mirror.as_uri()], "models": {"tiny": {"files": [entry]}}}
+    saved_manifest, saved_models = bootstrap.manifest, bootstrap.MODELS
+    bootstrap.manifest, bootstrap.MODELS = (lambda: fake), lib.tmp() / "mirror-models"
+    try:
+        out = bootstrap.fetch_models(["tiny"])
+        lib.check("bootstrap falls back to a mirror when the primary url fails",
+                  out["installed"] == ["sub/tiny.bin"] and (bootstrap.MODELS / "sub/tiny.bin").read_bytes() == payload,
+                  str(out))
+        (bootstrap.MODELS / "sub/tiny.bin").unlink()
+        (mirror / "sub-tiny.bin").write_bytes(b"tampered")
+        try:
+            bootstrap.fetch_models(["tiny"])
+            refused = False
+        except RuntimeError as e:
+            refused = "checksum mismatch" in str(e)
+        lib.check("bootstrap refuses a mirror file whose hash doesn't match",
+                  refused and not (bootstrap.MODELS / "sub/tiny.bin").exists())
+    finally:
+        bootstrap.manifest, bootstrap.MODELS = saved_manifest, saved_models
+
+
+def test_manifest():
+    import re
+
+    import bootstrap
+    import detect
+
+    m = bootstrap.manifest()
+    files = {f["path"] for model in m["models"].values() for f in model["files"]}
+    paths = [detect.SEGFORMER, detect.SEGFORMER_LABELS, detect.MIGAN, detect.YUNET, detect.U2NETP,
+             *[p for e in (detect.EDGETAM_ENCODER, detect.EDGETAM_DECODER) for p in (e, e.with_name(e.name + "_data"))]]
+    used = {str(p.relative_to(detect.MODELS)) for p in paths}
+    lib.check("models.json covers every model path detect.py loads", used == files,
+              f"code-only={used - files} manifest-only={files - used}")
+    lib.check("every manifest file is pinned with a hash and size",
+              all(re.fullmatch(r"[0-9a-f]{64}", f["sha256"]) and f["bytes"] > 0 and "/resolve/" in f["url"]
+                  for model in m["models"].values() for f in model["files"]))
+    lib.check("every feature names known models and packages",
+              all(set(f["models"]) <= set(m["models"]) and set(f["packages"]) <= set(m["packages"])
+                  for f in m["features"].values()))
+    setup = (lib.ROOT / "skills" / "feedready" / "setup.sh").read_text()
+    fetched = {name for line in re.findall(r"bootstrap\.py\"? ([a-z0-9 ]+)", setup) for name in line.split()}
+    lib.check("setup.sh fetches every manifest model", fetched == set(m["models"]), str(sorted(fetched)))
+    reqs = (lib.ROOT / "skills" / "feedready" / "requirements.txt").read_text()
+    lib.check("bootstrap packages are in requirements.txt",
+              all(name in reqs for name in m["packages"]), str(list(m["packages"])))
+
+    names = [bootstrap.asset_name(f) for model in m["models"].values() for f in model["files"]]
+    lib.check("release asset names are unique", len(names) == len(set(names)), str(names))
+    test_mirrors(bootstrap)
+
+    folder = lib.tmp() / "uploads"
+    folder.mkdir(exist_ok=True)
+    entry = m["models"]["yunet"]["files"][0]
+    (folder / "model.onnx").write_bytes(b"\0" * entry["bytes"])
+    saved = bootstrap.MODELS
+    bootstrap.MODELS = lib.tmp() / "models"
+    try:
+        out = bootstrap.fetch_models(["yunet"], folder)
+        lib.check("bootstrap --from ignores a file whose hash doesn't match",
+                  out["installed"] == [] and [n["file"] for n in out["still_needed"]] == [Path(entry["path"]).name]
+                  and not (bootstrap.MODELS / entry["path"]).exists(), str(out))
+        real = saved / entry["path"]
+        if real.exists():
+            (folder / "renamed.bin").write_bytes(real.read_bytes())
+            out = bootstrap.fetch_models(["yunet"], folder)
+            lib.check("bootstrap --from installs a renamed upload by its hash",
+                      out["installed"] == [entry["path"]] and (bootstrap.MODELS / entry["path"]).exists(), str(out))
+        else:
+            lib.skip("bootstrap --from installs a renamed upload", "yunet not installed")
+    finally:
+        bootstrap.MODELS = saved
+
+
 def run():
+    test_manifest()
     test_tables()
     test_color_math()
     test_io()

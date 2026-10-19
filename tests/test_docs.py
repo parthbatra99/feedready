@@ -64,13 +64,17 @@ def test_mask_types():
               documented == geometric | detected, f"docs={sorted(documented)}")
     swift_types = {"person", "subject"}
     lib.check("combinators are documented", all(f'"op": "{op}"' in text for op in ("union", "intersect", "subtract")))
-    skill = SKILL.read_text()
-    works = re.search(r"- Works: (.+)", skill).group(1)
-    blocked = re.search(r"- Doesn't work: (.+?)\.", skill).group(1)
-    lib.check("skill basic tier lists every geometric mask",
-              all((t if t != "color" else "colour") in works for t in geometric), works)
-    lib.check("skill basic tier blocks every detected mask",
-              all(t in blocked for t in detected - {"sky"}), blocked.replace("\n", " "))
+    import bootstrap
+
+    tier = section(SKILL.read_text(), "## 0. Check the tier", "## 1.")
+    table = dict(re.findall(r"^\| `([a-z]+)` \| (.+) \|$", tier, re.M))
+    lib.check("skill capability table matches models.json", set(table) == set(bootstrap.manifest()["features"]),
+              str(sorted(table)))
+    lib.check("skill capability table covers every detected mask",
+              all(any(f"`{t}`" in gives for gives in table.values()) for t in detected), str(table))
+    always = re.search(r"\n(Global sliders.+)\n", tier).group(1)
+    lib.check("skill lists every geometric mask as always working",
+              all((t if t != "color" else "colour") in always for t in geometric), always)
 
 
 def test_segment_aliases():
@@ -90,7 +94,7 @@ def test_commands():
     skill_commands = set(re.findall(r"^\| `([a-z]+)[^`]*` \|", section(SKILL.read_text(), "**Commands:**", "A RECIPE"), re.M))
     usage = feedready.USAGE
     usage_commands = set(re.findall(r"feedready\.py (\w+)", usage))
-    expected = {"doctor", "inspect", "masks", "board", "preview", "apply"}
+    expected = {"doctor", "probe", "bootstrap", "inspect", "masks", "board", "preview", "apply"}
     lib.check("skill command table matches the cli", skill_commands == expected, f"skill={skill_commands}")
     lib.check("usage text matches the cli", usage_commands == expected, f"usage={usage_commands}")
 

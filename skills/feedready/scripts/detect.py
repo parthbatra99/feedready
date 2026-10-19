@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -13,11 +15,14 @@ from imaging import guided_filter, load_mask, min_filter, resize
 CACHE = Path.home() / ".cache" / "feedready"
 ENGINE = CACHE / "bin" / "feedready-engine"
 ENGINE_SOURCE = Path(__file__).resolve().parents[1] / "swift" / "feedready_engine.swift"
-SEGFORMER = CACHE / "models" / "segformer_b0_ade_q.onnx"
-SEGFORMER_LABELS = CACHE / "models" / "segformer_config.json"
-EDGETAM_ENCODER = CACHE / "models" / "edgetam" / "vision_encoder.onnx"
-EDGETAM_DECODER = CACHE / "models" / "edgetam" / "prompt_encoder_mask_decoder.onnx"
-MIGAN = CACHE / "models" / "migan_pipeline_v2.onnx"
+MODELS = CACHE / "models"
+SEGFORMER = MODELS / "segformer_b0_ade_q.onnx"
+SEGFORMER_LABELS = MODELS / "segformer_config.json"
+EDGETAM_ENCODER = MODELS / "edgetam" / "vision_encoder.onnx"
+EDGETAM_DECODER = MODELS / "edgetam" / "prompt_encoder_mask_decoder.onnx"
+MIGAN = MODELS / "migan_pipeline_v2.onnx"
+YUNET = MODELS / "yunet_2023mar.onnx"
+U2NETP = MODELS / "u2netp.onnx"
 LOW_IOU = 0.7
 
 SEG_ALIASES = {
@@ -39,7 +44,7 @@ class MissingCapability(RuntimeError):
 
 
 def engine_available() -> bool:
-    return ENGINE.exists()
+    return ENGINE.exists() and sys.platform == "darwin" and not os.environ.get("FEEDREADY_NO_ENGINE")
 
 
 def engine_stale() -> bool:
@@ -52,7 +57,7 @@ def engine_stale() -> bool:
 
 def run_engine(*args: str) -> str:
     if not engine_available():
-        raise MissingCapability("needs Apple Vision (Mac tier only; on a Mac run setup.sh)")
+        raise MissingCapability("needs the Core Image engine (Mac only; on a Mac run setup.sh)")
     res = subprocess.run([str(ENGINE), *args], capture_output=True, text=True)
     if res.returncode != 0:
         raise RuntimeError(f"feedready-engine {args[0]} failed: {res.stderr.strip()}")
@@ -74,21 +79,32 @@ class Scene:
         self._edgetam = None
         self.notes: list[str] = []
 
+    def vision_dir(self) -> Path:
+        backend = vision_backend()
+        if backend is None:
+            raise MissingCapability(f"{VISION_MISSING}: {bootstrap_hint('people')}")
+        return self.work / ("vision" if backend == "apple" else "vision-portable")
+
     def vision(self) -> dict:
         if self._vision is None:
-            out = self.work / "vision"
+            out = self.vision_dir()
             if not (out / "vision.json").exists():
                 out.mkdir(exist_ok=True)
-                run_engine("vision", str(self.working_png), str(out))
+                if vision_backend() == "apple":
+                    run_engine("vision", str(self.working_png), str(out))
+                else:
+                    import portable
+
+                    portable.vision(self, out)
             self._vision = json.loads((out / "vision.json").read_text())
             self._vision["faces"] = sorted(self._vision.get("faces", []), key=_face_order)
         return self._vision
 
     def vision_mask(self, name: str) -> np.ndarray:
         self.vision()
-        path = self.work / "vision" / f"{name}.png"
+        path = self.vision_dir() / f"{name}.png"
         if not path.exists():
-            raise MissingCapability(f"Vision found no {name} in this photo")
+            raise MissingCapability(f"no {name} found in this photo")
         m = load_mask(path)
         h, w = self.img.shape[:2]
         return m if m.shape == (h, w) else resize(m, w, h)
@@ -167,7 +183,7 @@ class Scene:
     def _edgetam_embeddings(self):
         if self._edgetam is None:
             if not edgetam_available():
-                raise MissingCapability("object masks need onnxruntime + EdgeTAM (41 MB): run `setup.sh --models`")
+                raise MissingCapability(f"object masks need onnxruntime + EdgeTAM: {bootstrap_hint('object')}")
             import onnxruntime as ort
 
             providers = ["CPUExecutionProvider"]
@@ -203,10 +219,35 @@ def migan_available() -> bool:
     return _onnxruntime() and MIGAN.exists()
 
 
+def portable_vision_available() -> bool:
+    return segformer_available() and edgetam_available() and YUNET.exists() and U2NETP.exists()
+
+
+def vision_backend() -> str | None:
+    if engine_available():
+        return "apple"
+    if portable_vision_available():
+        return "portable"
+    return None
+
+
+def bootstrap_hint(feature: str) -> str:
+    import bootstrap
+
+    models = bootstrap.manifest()["features"][feature]["models"]
+    size = f"{bootstrap.megabytes(models)} download" if models else "small install"
+    if feature in ("people", "heic") and sys.platform == "darwin" and not os.environ.get("FEEDREADY_NO_ENGINE"):
+        return "run `setup.sh` (compiles the engine, no download)"
+    return f"run `feedready.py bootstrap {feature}` ({size})"
+
+
+VISION_MISSING = "person, subject, background and face masks need Apple Vision or the portable people models"
+
+
 def _run_segformer(img: np.ndarray):
     if not segformer_available():
         raise MissingCapability(
-            "scene masks (sky/mountain/water...) need onnxruntime + SegFormer-B0 (4.4 MB): run `setup.sh --segformer`"
+            f"scene masks (sky/mountain/water...) need onnxruntime + SegFormer-B0: {bootstrap_hint('segment')}"
         )
     import onnxruntime as ort
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from detect import MissingCapability, Scene, segformer_available
+from detect import MissingCapability, Scene, bootstrap_hint, segformer_available
 from develop import HSL_BANDS
 from imaging import cv2, gaussian, luma, min_filter, resize, rgb_to_hsv, skin_mask, srgb_to_linear, tiles
 
@@ -256,7 +256,7 @@ def color_cast(scene: Scene):
 
 def haze(scene: Scene):
     if not segformer_available():
-        raise MissingCapability("needs SegFormer")
+        raise MissingCapability(f"needs SegFormer: {bootstrap_hint('segment')}")
     small = resize(scene.img, 512, int(512 * scene.img.shape[0] / scene.img.shape[1]))
     dark = min_filter(small.min(-1), 7)
     person = [{"type": "person", "grow": 0.01}] if person_mask(scene) is not None else []
@@ -285,7 +285,7 @@ def haze(scene: Scene):
 
 def sky(scene: Scene):
     if not segformer_available():
-        raise MissingCapability("needs SegFormer")
+        raise MissingCapability(f"needs SegFormer: {bootstrap_hint('segment')}")
     m = scene.segment_mask("sky", refine=False) > 0.5
     if m.mean() < 0.05:
         return []
@@ -304,7 +304,7 @@ def sky(scene: Scene):
 
 def distractions(scene: Scene):
     if cv2 is None:
-        raise MissingCapability("needs OpenCV")
+        raise MissingCapability(f"needs OpenCV: {bootstrap_hint('opencv')}")
     img = scene.img
     H, W = img.shape[:2]
     S = min(H, W)

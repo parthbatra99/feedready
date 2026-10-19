@@ -19,7 +19,7 @@ skills/feedready/setup.sh --segformer --models
 ```
 
 - The venv lives at `~/.cache/feedready/venv` (Python 3.14, created by `setup.sh`); if missing, `run.sh` falls back to `python3`.
-- Selftest skips model-dependent checks (EdgeTAM, MI-GAN) with `skip` when models aren't installed — `ALL PASSED` with skips is not full coverage. The corpus suites (`suggest`, `eval`) skip the same way without the corpus or Mac tier; `tests/labels.json` pins per-photo diagnosis expectations, so after changing `diagnose.py` on purpose, read the new findings against each photo before updating labels.
+- Selftest skips model-dependent checks (EdgeTAM, MI-GAN, and the `portable` suite) with `skip` when models aren't installed — `ALL PASSED` with skips is not full coverage. The corpus suites (`suggest`, `eval`) skip the same way without the corpus or Mac tier; `tests/labels.json` pins per-photo diagnosis expectations, so after changing `diagnose.py` on purpose, read the new findings against each photo before updating labels.
 
 ## Editing workflow (the part that's easy to get wrong)
 
@@ -44,7 +44,7 @@ skills/feedready/setup.sh --segformer --models
 
 - **No code comments or docstrings** — in any language (Python, Swift, shell). The codebase is comment-free by choice; don't add explanatory comments, inline or standalone. Shebangs and user-facing strings (e.g. the argparse `USAGE` help text) are not comments — keep those. Explain design intent in commit messages instead.
 - **SKILL.md stays an open-spec Agent Skill** ([agentskills.io](https://agentskills.io)), so Codex and other agents can load it too. Frontmatter holds only `name` (matches the folder) and `description` (≤1024 chars); no Claude-only fields. Name a Claude tool only as an example ("SendUserFile in the Claude Code app"), never as the only way to do a step.
-- **Two tiers.** Person/subject/face/segment/object masks and `heal` need the Mac engine/models; the phone tier must not fake them — route the user to the Mac instead. `doctor` reports tier and what's missing.
+- **Capabilities, not tiers.** Rendering is Core Image on a Mac, numpy elsewhere. Detection is Apple Vision on a Mac; elsewhere `portable.py` (YuNet, U²-Net-p, SegFormer, EdgeTAM) writes the same `vision.json`. Models come from `models.json` via `setup.sh` (Mac) or `feedready.py bootstrap` (phone/sandbox). A missing capability must refuse with `MissingCapability` and the command that adds it; never fake it with a heuristic. `doctor` reports `tier` (`mac`/`portable`/`basic`) and `capabilities`. `FEEDREADY_NO_ENGINE=1` exercises the phone path on a Mac.
 - **Coordinates are fractions of the original photo, origin top-left, before crop** — crop is applied last. Read coordinates off the `inspect` grid image, never by eye.
 - All state (venv, models, engine, per-photo work dirs) lives in `~/.cache/feedready/`; the repo and plugin copy stay code-only (`build_zip.sh` excludes `swift/`, `setup.sh`, `__pycache__`). Final images go to `~/Pictures/feedready/` (Mac) or `/mnt/user-data/outputs/` (phone).
-- Requirements: Apple Silicon, macOS 14+, Xcode CLT (`swiftc`), `uv` or Python 3.14. Model licences are personal-use-only for some (see README) — don't add models without noting licence implications.
+- Requirements: Apple Silicon, macOS 14+, Xcode CLT (`swiftc`), `uv` or Python 3.14. SegFormer is research-or-evaluation-only (NVIDIA licence); the rest are MIT/Apache (see README). Don't add models without noting licence implications, and when a model changes, re-upload it with its licence to a new `models-vN` release and point `mirrors` in `models.json` at it.

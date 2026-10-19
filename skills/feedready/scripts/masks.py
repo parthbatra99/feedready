@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image, ImageDraw
 
-from detect import MissingCapability, Scene
+from detect import MissingCapability, Scene, bootstrap_hint
 from imaging import cv2, gaussian, guided_filter, luma, resize, rgb_to_hsv, smoothstep
 
 COMBINATORS = ("union", "intersect", "subtract")
@@ -93,10 +93,7 @@ def _base(spec: dict, scene: Scene) -> np.ndarray:
         return scene.object_mask(spec.get("box"), spec.get("points", []), spec.get("exclude", []))[0]
 
     if kind == "sky":
-        try:
-            return scene.segment_mask("sky")
-        except MissingCapability:
-            return _sky_heuristic(img)
+        return scene.segment_mask("sky")
 
     raise ValueError(f"unknown mask type '{kind}'")
 
@@ -111,7 +108,7 @@ def _face(spec: dict, scene: Scene) -> np.ndarray:
     faces = scene.faces()
     i = spec.get("index", 0)
     if i >= len(faces):
-        raise MissingCapability("Vision found no face; place a radial mask from the grid instead")
+        raise MissingCapability("no face found; place a radial mask from the grid instead")
     f = faces[i]
     x0, y0, x1, y1 = f["box"]
     H, W = scene.img.shape[:2]
@@ -133,14 +130,6 @@ def _face(spec: dict, scene: Scene) -> np.ndarray:
         rx, ry = bw * 0.65, bh * 0.75
     return _base({"type": "radial", "center": [cx, cy], "radius": [rx * scale / S, ry * scale / S],
                   "falloff": spec.get("falloff", 0.6)}, scene)
-
-
-def _sky_heuristic(img: np.ndarray) -> np.ndarray:
-    _, s, v = rgb_to_hsv(img)
-    texture = np.abs(luma(img) - gaussian(luma(img), 3))
-    cand = (v > 0.55) & (s < 0.35) & (texture < 0.03)
-    connected = np.cumprod(cand, axis=0).astype(np.float32)
-    return gaussian(connected, 2)
 
 
 def _modifiers(m: np.ndarray, spec: dict, scene: Scene) -> np.ndarray:
@@ -169,7 +158,7 @@ def _modifiers(m: np.ndarray, spec: dict, scene: Scene) -> np.ndarray:
 
 def _grabcut(m: np.ndarray, img: np.ndarray) -> np.ndarray:
     if cv2 is None:
-        raise MissingCapability("refine: grabcut needs opencv (Mac tier)")
+        raise MissingCapability(f"refine: grabcut needs opencv: {bootstrap_hint('opencv')}")
     H, W = m.shape
     scale = min(1.0, 1024 / max(H, W))
     w, h = max(1, int(W * scale)), max(1, int(H * scale))
