@@ -135,7 +135,10 @@ def cli_loop(renderer, tmp, src):
                                                    "cards", "review", "critique", "impact", "after", "warnings", "notes"},
               str(sorted(set(r1) ^ {"version", "preview", "full_quality", "size", "card", "compare", "diff", "map",
                                     "cards", "review", "critique", "impact", "after", "warnings", "notes"})))
-    lib.check("board json contract", set(board) == {"board", "tiles", "too_similar", "differences"})
+    lib.check("board json contract", set(board) == {"board", "page", "tiles", "too_similar", "differences"})
+    page = Path(board["page"]).read_text()
+    lib.check("the directions page offers each direction and loads nothing from the network",
+              page.count('"key": "') == 3 and "https://" not in page and "http://" not in page)
     lib.check("critique json contract", set(r1["critique"]) == {"verdict", "issues", "skipped"}
               and r1["critique"]["verdict"] in ("clean", "needs work"))
 
@@ -290,7 +293,7 @@ def doctor_and_masks(tmp, src):
 
     report = feedready.cmd_doctor(None)
     lib.check("doctor reports the tier and capabilities",
-              set(report) == {"tier", "python", "renderer", "capabilities", "output_dir", "missing"},
+              set(report) == {"version", "tier", "python", "renderer", "capabilities", "output_dir", "missing"},
               str(sorted(report)))
     lib.check("doctor lists every bootstrap feature",
               set(report["capabilities"]) == set(bootstrap.manifest()["features"]), str(report["capabilities"]))

@@ -28,17 +28,17 @@ Run every command from this skill's base directory: `<base>/run.sh <cmd>` on a M
 
 To show the user an image, use your tool for sending files (SendUserFile in the Claude Code app). If you have none, give the file's absolute path.
 
-**Show one thing per round, and make it the thing the next decision needs.** Most people read this on a phone. The round card (`card`) is the default: a 4:5 image that reads full width in a phone chat. The review page (`review`) is the same round with versions, hold-to-compare and the edits folded underneath; show it instead of the card when your surface can show an HTML page (an artifact, an HTML preview, a browser). Where shared files arrive as attachments the user has to tap open (claude.ai and the Claude apps), publish `review` as an artifact every round and update that same artifact on later rounds, rather than sharing the card. Pass `--note` the change the user would notice, not a self-review fix ("warmer on the ridge", not "dimmed a leaf"); the recipe's `label` heads the card. Never stack the card, the compare, the cards and the map in one message.
+**Show one thing per round, and make it the thing the next decision needs.** Most people read this on a phone. The round card (`card`) is the default: a 4:5 image that reads full width in a phone chat. The review page (`review`) is the same round with versions, hold-to-compare and the edits folded underneath; show it instead of the card when your surface can show an HTML page (an artifact, an HTML preview, a browser). Where shared files arrive as attachments the user has to tap open (claude.ai and the Claude apps), publish one artifact for the session and keep updating it: the board's `page` first, then `review` every round, rather than sharing the board or the card as files. Pass `--note` the change the user would notice, not a self-review fix ("warmer on the ridge", not "dimmed a leaf"); the recipe's `label` heads the card. Never stack the card, the compare, the cards and the map in one message.
 
 **Commands:**
 
 | command | what it does |
 |---|---|
-| `doctor` | tier, `capabilities`, and how to get anything `missing` |
+| `doctor` | `version`, tier, `capabilities`, and how to get anything `missing` |
 | `probe` | what this machine has: Python, packages, network, disk (for diagnosing `bootstrap`) |
 | `bootstrap FEATURE… [--from DIR]` | installs packages and models for `people`, `segment`, `object`, `heal`, `heic`, `opencv` or `all`; `--from` installs model files the user attached instead of downloading |
 | `inspect PHOTO --fetch` | downloads the models this photo needs, then grid, stats, `profile` (genre, hero), measured `findings`, `previous_versions`, and `fetched` |
-| `board PHOTO R1 R2 …` | the original plus each recipe side by side, with `too_similar` warnings |
+| `board PHOTO R1 R2 …` | the original plus each recipe side by side, with `too_similar` warnings, as an image (`board`) and a phone-first page (`page`) to pick from |
 | `masks RECIPE PHOTO` | contact sheet of every step's mask |
 | `preview RECIPE PHOTO --note "…"` | a screen-size render saved as the next version `vN`, plus visuals and a critique |
 | `apply RECIPE PHOTO` | the full-resolution export, with a 100% crop as proof |
@@ -116,7 +116,7 @@ Otherwise the board is your question. Build three directions, following vibes.md
 
 Run `run.sh board PHOTO A.json B.json C.json`. If `too_similar` lists a pair, push them apart and rerun.
 
-Show the board and write:
+Show the board (the `page` where your surface shows pages, otherwise the `board` image) and write:
 - Your read of the photo, in 1–2 lines.
 - A, B and C, one line each: the feel, and what it does to this photo.
 - The destination question, if it's unknown.

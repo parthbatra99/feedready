@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import html
+import re
 import json
 from io import BytesIO
 from pathlib import Path
@@ -412,6 +413,74 @@ def review_html(path: Path, title: str, versions: list[dict], *, subtitle: str =
             "stillOpen": still_open, "fullQuality": full_quality}
     blob = json.dumps(data).replace("</", "<\\/")
     path.write_text(PAGE.replace("__TITLE__", html.escape(title)).replace("__DATA__", blob))
+
+
+def directions_html(path: Path, title: str, tiles: list[tuple[str, str, np.ndarray]]) -> None:
+    original = _uri(Image.fromarray(to_u8(tiles[0][2])), 480)
+    cards = []
+    for i, (t, n, img) in enumerate(tiles[1:]):
+        key = t if re.fullmatch(r"v\d+", t) else chr(ord("A") + i)
+        name = re.sub(r"^[A-Z]\s*[·:.\-]\s*", "", t)
+        cards.append({"key": key, "title": "" if name in (key, "") else name, "note": n,
+                      "src": _uri(Image.fromarray(to_u8(img)), 1200)})
+    blob = json.dumps({"title": title, "original": original, "cards": cards}).replace("</", "<\\/")
+    path.write_text(DIRECTIONS.replace("__TITLE__", html.escape(title)).replace("__DATA__", blob))
+
+
+DIRECTIONS = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>__TITLE__</title>
+<style>
+:root{--bg:#121110;--panel:#1b1a18;--line:#2b2925;--ink:#ede9e2;--soft:#b8b2a7;--muted:#9c968c;--accent:#e8a33d}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 0 32px;display:flex;flex-direction:column;gap:14px}
+header{padding:0 16px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.eyebrow{font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+h1{margin:2px 0 0;font-size:21px;font-weight:600}
+.orig{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px}
+.orig img{height:72px;width:auto;border-radius:6px;display:block;opacity:.9}
+.orig span{font:11px ui-monospace,Menlo,monospace;color:var(--muted)}
+.pager{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:0 16px 4px;scrollbar-width:none}
+.pager::-webkit-scrollbar{display:none}
+.card{flex:0 0 86%;scroll-snap-align:center;display:flex;flex-direction:column;gap:10px}
+.frame{position:relative;border-radius:12px;overflow:hidden;width:fit-content;max-width:100%;margin:0 auto}
+.frame img{display:block;max-width:100%;max-height:60vh;max-height:60svh;width:auto;height:auto}
+.key{position:absolute;top:12px;left:12px;width:40px;height:40px;border-radius:50%;background:var(--ink);color:#121110;font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center}
+.name{font-size:19px;font-weight:600}
+.note{color:var(--soft)}
+.pick{min-height:52px;border:1px solid var(--line);border-radius:12px;background:var(--panel);cursor:pointer;font-weight:600}
+.pick:hover{border-color:var(--accent)}
+.dots{display:flex;justify-content:center;gap:6px}
+.dots span{width:6px;height:6px;border-radius:3px;background:#4a4640}
+.dots span.on{width:18px;background:var(--ink)}
+.hint{padding:0 16px;text-align:center;font-size:13px;color:var(--muted)}
+@media (min-width:900px){.wrap{padding:24px 24px 40px}header{padding:0}.pager{overflow:visible;padding:0;display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr))}.card{flex:none}.dots{display:none}.hint{padding:0}.frame img{max-height:62vh}}
+</style></head><body>
+<div class="wrap">
+<header><div><div class="eyebrow">Round 0 · pick a direction</div><h1 id="title"></h1></div><div class="orig"><img id="orig" alt="The photo as shot"><span>AS SHOT</span></div></header>
+<div class="pager" id="pager"></div>
+<div class="dots" id="dots" aria-hidden="true"></div>
+<p class="hint" id="hint">Tap one to copy your pick, or mix in the chat: \u201cB, but keep A\u2019s sky\u201d</p>
+</div>
+<script>
+const D=__DATA__;
+const $=id=>document.getElementById(id);
+const el=(tag,attrs,kids)=>{const e=document.createElement(tag);for(const k in attrs||{}){if(k==="text")e.textContent=attrs[k];else e.setAttribute(k,attrs[k])}for(const c of kids||[])e.appendChild(c);return e};
+$("title").textContent=D.title;$("orig").src=D.original;
+const pager=$("pager");pager.style.setProperty("--n",D.cards.length);
+const say=m=>{$("hint").textContent=m};
+function copy(t){const typed=()=>say("Type \u201c"+t+"\u201d in the chat.");try{navigator.clipboard.writeText(t).then(()=>say("Copied \u201c"+t+"\u201d. Paste it in the chat."),typed)}catch(e){typed()}}
+D.cards.forEach(c=>{const b=el("button",{class:"pick",text:"Go with "+c.key});b.onclick=()=>copy(c.key);
+pager.appendChild(el("div",{class:"card"},[el("div",{class:"frame"},[el("img",{src:c.src,alt:c.key+": "+c.title}),el("span",{class:"key",text:c.key})]),el("div",{class:"name",text:c.title?c.key+" \u00b7 "+c.title:c.key}),el("div",{class:"note",text:c.note||""}),b]));
+$("dots").appendChild(el("span"))});
+const dots=[...$("dots").children];
+const mark=()=>{const w=pager.firstElementChild?pager.firstElementChild.getBoundingClientRect().width+12:1;const i=Math.round(pager.scrollLeft/w);dots.forEach((d,j)=>d.classList.toggle("on",j===i))};
+pager.addEventListener("scroll",mark,{passive:true});mark();
+</script></body></html>
+"""
 
 
 PAGE = """<!doctype html>

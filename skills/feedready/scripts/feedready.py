@@ -62,6 +62,7 @@ elsewhere numpy renders and the portable models (bootstrap) detect people, faces
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
 LARGE_MEGAPIXELS = 30
 WORKING_COPY_VERSION = 2
+RELEASE = "0.5.2"
 PREVIEW_EDGE = 1600
 FULL_QUALITY_EDGE = 2048
 DETAIL_SIDE = 600
@@ -230,6 +231,7 @@ def _missing(caps: dict) -> list[str]:
 def cmd_doctor(_args) -> dict:
     caps = capabilities()
     return {
+        "version": RELEASE,
         "tier": tier(),
         "python": sys.version.split()[0],
         "renderer": "core-image" if engine_available() else "numpy",
@@ -339,6 +341,7 @@ def summary(out: dict, faces: list[dict], caps: dict) -> dict:
     if caps["object"]:
         available.append("object")
     return {
+        "version": RELEASE,
         "tier": out["tier"],
         "fetched": [f"{f['feature']} ({f['mb']} MB){'' if f.get('ok') else ' FAILED: ' + str(f.get('error'))}"
                     for f in out.get("fetched", [])],
@@ -627,11 +630,13 @@ def cmd_board(args) -> dict:
         tiles.append((title, note, load_rgb(out)))
     path = s.work / "board.jpg"
     review.board(tiles, path, s.icc)
+    page = s.work / "directions.html"
+    review.directions_html(page, s.src.stem, tiles)
     pairs = critique.distinctness([t[2] for t in tiles])
     names = [t[0] for t in tiles]
     alike = [f"{names[i]} and {names[j]} look alike (difference {d})" for (i, j), d in
              ((pr["pair"], pr["delta"]) for pr in pairs) if d < SIMILAR]
-    return {"board": str(path), "tiles": names, "too_similar": alike,
+    return {"board": str(path), "page": str(page), "tiles": names, "too_similar": alike,
             "differences": {f"{names[pr['pair'][0]]} | {names[pr['pair'][1]]}": pr["delta"] for pr in pairs}}
 
 

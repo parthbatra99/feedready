@@ -105,7 +105,7 @@ Per-photo working files, including every saved version, are cached in `~/.cache/
 Claude Code runs an installed copy of the plugin, not this repo, so a change only reaches it through a version bump:
 
 1. Edit and test in this repo.
-2. Bump `version` in `.claude-plugin/plugin.json` and commit.
+2. Bump `version` in `.claude-plugin/plugin.json` and `RELEASE` in `scripts/feedready.py` to match (`doctor` reports it, and the docs suite checks they agree), then commit.
 3. Update the installed copy:
 
    ```bash

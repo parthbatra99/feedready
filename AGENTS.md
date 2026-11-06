@@ -26,7 +26,7 @@ skills/feedready/setup.sh --segformer --models
 
 ## Editing workflow (the part that's easy to get wrong)
 
-- **Claude Code runs an installed copy** at `~/.claude/plugins/cache/feedready/`. Never edit that copy. Edit the repo, then ship via: bump `version` in `.claude-plugin/plugin.json` → `claude plugin marketplace update feedready && claude plugin update feedready@feedready` → `/reload-plugins`.
+- **Claude Code runs an installed copy** at `~/.claude/plugins/cache/feedready/`. Never edit that copy. Edit the repo, then ship via: bump `version` in `.claude-plugin/plugin.json` and `RELEASE` in `scripts/feedready.py` → `claude plugin marketplace update feedready && claude plugin update feedready@feedready` → `/reload-plugins`.
 - Changing `skills/feedready/swift/feedready_engine.swift` requires rerunning `setup.sh` (it records a sha256; `doctor` reports the engine stale until rebuilt).
 - claude.ai (web and phone) installs the plugin from this repo's marketplace and syncs from `main`, so pushing is the release; the version bump still matters for Claude Code.
 - README art is generated from one real session (`~/.cache/feedready/work/1-012c6c15/`), not drawn by hand: `assets/make_hero.py` renders `hero.webp` (2×, what GitHub shows) and the `hero.gif` fallback, `assets/make_panels.py` renders `sees.webp` (the session's real masks via `masks.build`) and `work.webp` (the top v4 edit cards), and `assets/make_talk.py` renders `art/talk.svg` as Geist outlines. If you change how `masks`, `board`, `cards` or step colours work, regenerate them so the README stays truthful (CONTRIBUTING.md has the commands). Keep `hero.webp` under ~8 MB and check it for ghosting (faint leftovers of earlier frames) after changing the encoder settings.

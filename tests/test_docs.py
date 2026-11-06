@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 import lib
@@ -97,6 +98,8 @@ def test_commands():
     expected = {"doctor", "probe", "bootstrap", "inspect", "masks", "board", "preview", "apply", "carry", "sheet"}
     lib.check("skill command table matches the cli", skill_commands == expected, f"skill={skill_commands}")
     lib.check("usage text matches the cli", usage_commands == expected, f"usage={usage_commands}")
+    plugin = json.loads((lib.ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+    lib.check("doctor reports the plugin's version", feedready.RELEASE == plugin, f"{feedready.RELEASE} vs {plugin}")
 
 
 def test_engine_contract():
