@@ -138,10 +138,16 @@ def cli_loop(renderer, tmp, src):
               str(board["too_similar"]))
 
     lib.check("preview json contract", set(r1) == {"version", "redo", "preview", "full_quality", "size", "card", "compare", "diff", "map",
-                                                   "cards", "review", "critique", "impact", "after", "warnings", "notes"},
+                                                   "cards", "review", "replies", "critique", "impact", "after", "warnings", "notes"},
               str(sorted(set(r1) ^ {"version", "redo", "preview", "full_quality", "size", "card", "compare", "diff", "map",
-                                    "cards", "review", "critique", "impact", "after", "warnings", "notes"})))
-    lib.check("board json contract", set(board) == {"board", "page", "tiles", "too_similar", "differences"})
+                                    "cards", "review", "replies", "critique", "impact", "after", "warnings", "notes"})))
+    lib.check("board json contract", set(board) == {"board", "page", "tiles", "too_similar", "differences", "replies"})
+    lib.check("board replies send each direction's key with one tap",
+              all(f'data-say="{k}"' in board["replies"] for k in "ABC") and "sendPrompt(" in board["replies"]
+              and "<img" not in board["replies"], board["replies"][:200])
+    lib.check("round replies offer the way back and the export",
+              f'data-say="back to v{n}"' in r3["replies"] and "data-say=\"looks done\"" in r3["replies"]
+              and "<img" not in r3["replies"], r3["replies"][:300])
     page = Path(board["page"]).read_text()
     lib.check("the directions page offers each direction and loads nothing from the network",
               page.count('"key": "') == 3 and "https://" not in page and "http://" not in page)

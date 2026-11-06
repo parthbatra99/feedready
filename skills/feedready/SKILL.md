@@ -28,7 +28,17 @@ Run every command from this skill's base directory: `<base>/run.sh <cmd>` on a M
 
 To show the user an image, use your tool for sending files (SendUserFile in the Claude Code app). If you have none, give the file's absolute path.
 
-**Show one thing per round, and make it the thing the next decision needs.** Most people read this on a phone. The round card (`card`) is the default: a 4:5 image that reads full width in a phone chat. The review page (`review`) is the same round with versions, hold-to-compare and the edits folded underneath; show it instead of the card when your surface can show an HTML page (an artifact, an HTML preview, a browser). Where shared files arrive as attachments the user has to tap open (claude.ai and the Claude apps), publish one artifact for the session and keep updating it: the board's `page` first, then `review` every round, rather than sharing the board or the card as files. Pass `--note` the change the user would notice, not a self-review fix ("warmer on the ridge", not "dimmed a leaf"); the recipe's `label` heads the card. Never stack the card, the compare, the cards and the map in one message.
+**Show one thing per round, and make it the thing the next decision needs.** Most people read this on a phone. The round card (`card`) is the default: a 4:5 image that reads full width in a phone chat. The review page (`review`) is the same round with versions, hold-to-compare and the edits folded underneath; show it instead of the card when your surface can show an HTML page (an artifact, an HTML preview, a browser). Where shared files arrive as attachments the user has to tap open (claude.ai and the Claude apps), publish one artifact for the session and keep updating it: the board's `page` first, then `review` every round, rather than sharing the board or the card as files. Pages published that way can't send anything to the chat, so they ask the user to type their reply.
+
+**Make replying one tap where the surface allows it.** `board` and `preview` also return `replies`: a small HTML fragment of reply buttons, with no images, whose buttons call `sendPrompt(text)`. That function exists only in inline interactive visuals that post a tapped reply into the chat (on claude.ai web and the Claude desktop app, the visual tool, e.g. `show_widget`). Per surface:
+
+| surface | images | reply |
+|---|---|---|
+| claude.ai web, Claude desktop app | the artifact page | after your message, render `replies` verbatim as an inline visual |
+| Claude iOS and Android apps | the artifact page | typed; inline visuals don't render there |
+| Claude Code, other agents | `review` or `card` | typed |
+
+You can't tell the web from the phone app, so on claude.ai render `replies` every time and always end your message with the typed reply line too: where visuals don't render, the text still carries it. Never put the photos into an inline visual; its code is written out by you and can't load the rendered files. Where your surface has no such visual, ignore `replies`. Pass `--note` the change the user would notice, not a self-review fix ("warmer on the ridge", not "dimmed a leaf"); the recipe's `label` heads the card. Never stack the card, the compare, the cards and the map in one message.
 
 **Commands:**
 
@@ -38,7 +48,7 @@ To show the user an image, use your tool for sending files (SendUserFile in the 
 | `probe` | what this machine has: Python, packages, network, disk (for diagnosing `bootstrap`) |
 | `bootstrap FEATURE… [--from DIR]` | installs packages and models for `people`, `segment`, `object`, `heal`, `heic`, `opencv` or `all`; `--from` installs model files the user attached instead of downloading |
 | `inspect PHOTO --fetch` | downloads the models this photo needs, then grid, stats, `profile` (genre, hero), measured `findings`, `previous_versions`, and `fetched` |
-| `board PHOTO R1 R2 …` | the original plus each recipe side by side, with `too_similar` warnings, as an image (`board`) and a phone-first page (`page`) to pick from |
+| `board PHOTO R1 R2 …` | the original plus each recipe side by side, with `too_similar` warnings, as an image (`board`), a phone-first page (`page`) to pick from, and one-tap pick buttons (`replies`) |
 | `masks RECIPE PHOTO` | contact sheet of every step's mask |
 | `preview RECIPE PHOTO --note "…"` | a screen-size render saved as the next version `vN`, plus visuals and a critique; `--redo` replaces the latest version instead (self-review fixes) |
 | `apply RECIPE PHOTO` | the full-resolution export, with a 100% crop as proof |
@@ -125,7 +135,7 @@ Show the board (the `page` where your surface shows pages, otherwise the `board`
   - A 4096 px long edge is still sharp on any screen at a fraction of the size.
 - End with: "Pick A, B or C, mix them ('B but darker'), or describe the vibe in your own words."
 
-Then stop and wait.
+Then render `replies` where your surface can (see "Make replying one tap"), stop and wait.
 
 **When the user gives exact edits** (a pasted list plus "apply"): map each item in one line ("eyes +0.4 EV → radial on the eyes, exposure 0.4"), flag anything you can't do, run one round with those edits, and deliver.
 
@@ -146,6 +156,7 @@ Each round produces one version, `vN`, that the user sees.
    | `map` | numbered outlines of where each step lands |
    | `cards` | each step alone, zoomed to where it acts, ranked by measured impact |
    | `review` | the review page: hold or split to compare, every version, the edits ranked with close-ups, the history |
+   | `replies` | one-tap reply buttons for an inline visual (see "Make replying one tap") |
    | `critique` | `verdict` plus `issues` |
    | `impact` | per-step change level |
 
@@ -170,6 +181,7 @@ Each round produces one version, `vN`, that the user sees.
    - **vN:** what you did and why, in plain words ("dimmed the wall so your face is the brightest thing"). In the first round of a direction, name the three edits that carry it, one line each, from the top of `impact`.
    - The one change you'd still make, if any. Critique numbers stay out unless the user asks why.
    - "Notes? ('warmer', 'less on the face', 'back to v2'), or 'ship it'."
+   - Then `replies`, where your surface can render it.
 5. **Notes become the next round.** Translate them with vibes.md's notes table, and change only what the note is about.
    - **Vague notes** ("make it pop"): do the most likely reading and say what you took it as. Don't interrogate.
    - **"Show me the versions":** run `board PHOTO v1 v2 v3`.

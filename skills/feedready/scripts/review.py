@@ -415,14 +415,36 @@ def review_html(path: Path, title: str, versions: list[dict], *, subtitle: str =
     path.write_text(PAGE.replace("__TITLE__", html.escape(title)).replace("__DATA__", blob))
 
 
-def directions_html(path: Path, title: str, tiles: list[tuple[str, str, np.ndarray]]) -> None:
-    original = _uri(Image.fromarray(to_u8(tiles[0][2])), 480)
-    cards = []
-    for i, (t, n, img) in enumerate(tiles[1:]):
+def direction_keys(tiles: list[tuple[str, str, np.ndarray]]) -> list[tuple[str, str]]:
+    out = []
+    for i, (t, _, _) in enumerate(tiles[1:]):
         key = t if re.fullmatch(r"v\d+", t) else chr(ord("A") + i)
         name = re.sub(r"^[A-Z]\s*[·:.\-]\s*", "", t)
-        cards.append({"key": key, "title": "" if name in (key, "") else name, "note": n,
-                      "src": _uri(Image.fromarray(to_u8(img)), 1200)})
+        out.append((key, "" if name in (key, "") else name))
+    return out
+
+
+def round_replies(n: int, previous: int | None, full_quality: bool) -> list[str]:
+    return [f"back to v{previous}"] * bool(previous) + ["warmer", "cooler", "more", "less"] + [
+        "looks done" if full_quality else f"export v{n}"]
+
+
+def reply_bar(ask: str, replies: list[tuple[str, str]]) -> str:
+    buttons = "".join(
+        f'<button data-say="{html.escape(say)}" onclick="sendPrompt(this.dataset.say)">{html.escape(label)}</button>'
+        for label, say in replies)
+    return ('<div style="font:15px/1.4 system-ui,sans-serif;display:flex;flex-direction:column;gap:10px">'
+            f'<div style="opacity:.75">{html.escape(ask)}</div>'
+            '<div style="display:flex;flex-wrap:wrap;gap:8px">' + buttons + '</div>'
+            '<style>[data-say]{font:inherit;color:inherit;background:transparent;border:1px solid currentColor;'
+            'border-radius:999px;padding:10px 16px;min-height:44px;cursor:pointer;opacity:.85}'
+            '[data-say]:hover{opacity:1}</style></div>')
+
+
+def directions_html(path: Path, title: str, tiles: list[tuple[str, str, np.ndarray]]) -> None:
+    original = _uri(Image.fromarray(to_u8(tiles[0][2])), 480)
+    cards = [{"key": key, "title": name, "note": n, "src": _uri(Image.fromarray(to_u8(img)), 1200)}
+             for (key, name), (_, n, img) in zip(direction_keys(tiles), tiles[1:])]
     blob = json.dumps({"title": title, "original": original, "cards": cards}).replace("</", "<\\/")
     path.write_text(DIRECTIONS.replace("__TITLE__", html.escape(title)).replace("__DATA__", blob))
 
@@ -451,19 +473,18 @@ h1{margin:2px 0 0;font-size:21px;font-weight:600}
 .key{position:absolute;top:12px;left:12px;width:40px;height:40px;border-radius:50%;background:var(--ink);color:#121110;font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center}
 .name{font-size:19px;font-weight:600}
 .note{color:var(--soft)}
-.pick{min-height:52px;border:1px solid var(--line);border-radius:12px;background:var(--panel);cursor:pointer;font-weight:600}
-.pick:hover{border-color:var(--accent)}
 .dots{display:flex;justify-content:center;gap:6px}
 .dots span{width:6px;height:6px;border-radius:3px;background:#4a4640}
 .dots span.on{width:18px;background:var(--ink)}
-.hint{padding:0 16px;text-align:center;font-size:13px;color:var(--muted)}
+.hint{margin:0;padding:0 16px;text-align:center;font-size:15px;color:var(--soft)}
+.hint b{color:var(--ink)}
 @media (min-width:900px){.wrap{padding:24px 24px 40px}header{padding:0}.pager{overflow:visible;padding:0;display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr))}.card{flex:none}.dots{display:none}.hint{padding:0}.frame img{max-height:62vh}}
 </style></head><body>
 <div class="wrap">
 <header><div><div class="eyebrow">Round 0 · pick a direction</div><h1 id="title"></h1></div><div class="orig"><img id="orig" alt="The photo as shot"><span>AS SHOT</span></div></header>
 <div class="pager" id="pager"></div>
 <div class="dots" id="dots" aria-hidden="true"></div>
-<p class="hint" id="hint">Tap one to copy your pick, or mix in the chat: \u201cB, but keep A\u2019s sky\u201d</p>
+<p class="hint">Reply in the chat with a letter, like <b>\u201cA\u201d</b>, or mix them: <b>\u201cB, but keep A\u2019s sky\u201d</b></p>
 </div>
 <script>
 const D=__DATA__;
@@ -471,10 +492,8 @@ const $=id=>document.getElementById(id);
 const el=(tag,attrs,kids)=>{const e=document.createElement(tag);for(const k in attrs||{}){if(k==="text")e.textContent=attrs[k];else e.setAttribute(k,attrs[k])}for(const c of kids||[])e.appendChild(c);return e};
 $("title").textContent=D.title;$("orig").src=D.original;
 const pager=$("pager");pager.style.setProperty("--n",D.cards.length);
-const say=m=>{$("hint").textContent=m};
-function copy(t){const typed=()=>say("Type \u201c"+t+"\u201d in the chat.");try{navigator.clipboard.writeText(t).then(()=>say("Copied \u201c"+t+"\u201d. Paste it in the chat."),typed)}catch(e){typed()}}
-D.cards.forEach(c=>{const b=el("button",{class:"pick",text:"Go with "+c.key});b.onclick=()=>copy(c.key);
-pager.appendChild(el("div",{class:"card"},[el("div",{class:"frame"},[el("img",{src:c.src,alt:c.key+": "+c.title}),el("span",{class:"key",text:c.key})]),el("div",{class:"name",text:c.title?c.key+" \u00b7 "+c.title:c.key}),el("div",{class:"note",text:c.note||""}),b]));
+D.cards.forEach(c=>{
+pager.appendChild(el("div",{class:"card"},[el("div",{class:"frame"},[el("img",{src:c.src,alt:c.key+": "+c.title}),el("span",{class:"key",text:c.key})]),el("div",{class:"name",text:c.title?c.key+" \u00b7 "+c.title:c.key}),el("div",{class:"note",text:c.note||""})]));
 $("dots").appendChild(el("span"))});
 const dots=[...$("dots").children];
 const mark=()=>{const w=pager.firstElementChild?pager.firstElementChild.getBoundingClientRect().width+12:1;const i=Math.round(pager.scrollLeft/w);dots.forEach((d,j)=>d.classList.toggle("on",j===i))};
@@ -521,8 +540,8 @@ aside{flex:1 1 400px;min-width:0;display:flex;flex-direction:column;gap:12px}
 .ver span{font:13px ui-monospace,Menlo,monospace}
 .ver[aria-pressed=true]{border-color:var(--accent)}
 .small{font-size:13px;color:var(--muted)}
-.reply{flex:none;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
-.primary{display:flex;align-items:center;justify-content:center;gap:10px;min-height:52px;border:0;border-radius:12px;background:var(--accent);color:#121110;font-weight:600;cursor:pointer;width:100%}
+.ask{margin:0;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--soft)}
+.ask b{color:var(--ink);font-weight:600}
 details{border:1px solid var(--line);border-radius:12px;background:var(--panel)}
 summary{list-style:none;display:flex;justify-content:space-between;align-items:center;min-height:52px;padding:0 16px;cursor:pointer}
 summary::-webkit-details-marker{display:none}
@@ -560,9 +579,7 @@ ol.notes{margin:0;padding-left:20px;color:var(--soft);font-size:14px}
 <p class="note" id="note"></p>
 <p class="open" id="open" hidden></p>
 <div class="chips" id="vers" aria-label="Versions"></div>
-<div><div class="small" id="replyHint">Say what to change in the chat, or tap one to copy it</div>
-<div class="chips" id="replies" style="margin-top:8px"></div></div>
-<button class="primary" id="export"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg><span id="exportLabel">Export full quality</span></button>
+<p class="ask" id="ask"></p>
 </main>
 <aside>
 <details id="changes" hidden><summary><span><b>What changed</b> <span class="small" id="count"></span></span><span class="act"></span></summary><div class="body" id="changesBody"></div></details>
@@ -577,6 +594,13 @@ const el=(tag,attrs,kids)=>{const e=document.createElement(tag);for(const k in a
 const stage=$("stage"),after=$("after"),before=$("before"),split=$("split");
 let cur=D.versions.length-1,mode="hold",holding=false;
 const latest=()=>D.versions[D.versions.length-1];
+function ask(v){
+  const q=t=>el("b",{text:"\u201c"+t+"\u201d"}),t=s=>document.createTextNode(s);
+  const back=D.versions.length>1&&v===latest()?D.versions[D.versions.length-2].n:null;
+  const parts=[t("Reply in the chat: "),q("warmer"),t(", "),q("less"),t(back?", ":" or "),back?q("back to v"+back):null,back?t(" or "):null,
+    q(D.fullQuality&&v===latest()?"looks done":"export v"+v.n),t(D.fullQuality&&v===latest()?" to save it.":" for the full-quality file.")].filter(Boolean);
+  $("ask").replaceChildren(...parts);
+}
 function setX(v){stage.style.setProperty("--x",v+"%")}
 function paint(){
   const v=D.versions[cur];
@@ -586,7 +610,7 @@ function paint(){
   $("hint").textContent=mode==="split"?"Drag to compare":holding?"Original":"Press and hold for the original";
   $("note").textContent="v"+v.n+(v.note?" · "+v.note:"");
   [...$("vers").children].forEach((b,i)=>b.setAttribute("aria-pressed",i===cur));
-  $("exportLabel").textContent=D.fullQuality?"Save v"+v.n+", already full size":"Export v"+v.n+" at full quality";
+  ask(v);
 }
 function setMode(m){mode=m;stage.classList.toggle("split",m==="split");$("mHold").setAttribute("aria-pressed",m==="hold");$("mSplit").setAttribute("aria-pressed",m==="split");if(m==="split")split.value=50;holding=false;paint()}
 $("mHold").onclick=()=>setMode("hold");$("mSplit").onclick=()=>setMode("split");
@@ -598,10 +622,6 @@ stage.addEventListener("contextmenu",e=>{if(mode==="hold")e.preventDefault()});
 addEventListener("keydown",e=>{if(e.key==="b"||e.key==="B")hold(true)});
 addEventListener("keyup",e=>{if(e.key==="b"||e.key==="B")hold(false)});
 D.versions.forEach((v,i)=>{const b=el("button",{class:"ver","aria-label":"v"+v.n+(v.note?": "+v.note:"")},[el("img",{src:v.after,alt:""}),el("span",{text:"v"+v.n})]);b.onclick=()=>{cur=i;paint()};$("vers").appendChild(b)});
-function copy(t){const say=m=>{$("replyHint").textContent=m};const typed=()=>say("Type “"+t+"” in the chat.");try{navigator.clipboard.writeText(t).then(()=>say("Copied “"+t+"”. Paste it in the chat."),typed)}catch(e){typed()}}
-const replies=["looks done"];if(D.versions.length>1)replies.push("back to v"+D.versions[D.versions.length-2].n);replies.push("more","less","warmer","cooler");
-replies.forEach(t=>{const b=el("button",{class:"reply",text:t});b.onclick=()=>copy(t);$("replies").appendChild(b)});
-$("export").onclick=()=>copy("export v"+D.versions[cur].n);
 $("eyebrow").textContent="Round "+latest().n+(D.subtitle?" · "+D.subtitle:"");
 $("title").textContent=D.title;
 const badge=$("badge");badge.textContent=D.stillOpen?"One fix left":D.fullQuality?"Full quality":"Your turn";if(!D.stillOpen&&D.fullQuality)badge.classList.add("ok");

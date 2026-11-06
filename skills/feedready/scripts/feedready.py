@@ -63,7 +63,7 @@ elsewhere numpy renders and the portable models (bootstrap) detect people, faces
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
 LARGE_MEGAPIXELS = 30
 WORKING_COPY_VERSION = 2
-RELEASE = "0.5.3"
+RELEASE = "0.5.4"
 PREVIEW_EDGE = 1600
 FULL_QUALITY_EDGE = 2048
 DETAIL_SIDE = 600
@@ -606,6 +606,9 @@ def cmd_preview(args) -> dict:
         "map": str(edit_map),
         "cards": str(cards) if cards else None,
         "review": str(page),
+        "replies": review.reply_bar(f"{tag}: tap a reply, or type your own notes in the chat",
+                                    [(t, t) for t in review.round_replies(n, previous[-1] if previous else None,
+                                                                          full_quality)]),
         "critique": verdict,
         "impact": [{"step": i + 1, "name": st.get("name", ""), "level": imp["level"], "delta": imp["delta"],
                     "reach": imp["reach"]} for i, (st, imp) in enumerate(zip(steps, impacts))],
@@ -642,7 +645,10 @@ def cmd_board(args) -> dict:
     names = [t[0] for t in tiles]
     alike = [f"{names[i]} and {names[j]} look alike (difference {d})" for (i, j), d in
              ((pr["pair"], pr["delta"]) for pr in pairs) if d < SIMILAR]
-    return {"board": str(path), "page": str(page), "tiles": names, "too_similar": alike,
+    keys = review.direction_keys(tiles)
+    replies = review.reply_bar("Tap one to go with it, or type a mix in the chat",
+                               [(f"{k} · {t}" if t else k, k) for k, t in keys])
+    return {"board": str(path), "page": str(page), "tiles": names, "too_similar": alike, "replies": replies,
             "differences": {f"{names[pr['pair'][0]]} | {names[pr['pair'][1]]}": pr["delta"] for pr in pairs}}
 
 
