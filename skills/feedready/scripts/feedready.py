@@ -570,7 +570,8 @@ def cmd_preview(args) -> dict:
         cards = vdir / f"{tag}-cards.jpg"
         review.cards(tiny, singles, cards, s.icc)
     card = vdir / f"{tag}-card.jpg"
-    review.round_card(before, after, tag, args.note or recipe.get("note", ""), card, s.icc, preview=not full_quality)
+    review.round_card(before, after, tag, args.note or recipe.get("note", ""), card, s.icc, preview=not full_quality,
+                      title=recipe.get("label", ""))
 
     (vdir / f"{tag}.json").write_text(json.dumps(recipe, indent=2))
     index = version_index(s.work)

@@ -131,15 +131,17 @@ def _pill(d: ImageDraw.ImageDraw, xy, text: str, f, ink=PAPER, anchor: str = "lt
 
 
 def round_card(before: np.ndarray, after: np.ndarray, tag: str, note: str, path: Path,
-               icc: bytes | None = None, preview: bool = True) -> None:
+               icc: bytes | None = None, preview: bool = True, title: str = "") -> None:
     a, b = Image.fromarray(to_u8(after)), Image.fromarray(to_u8(before))
     kind = shape(a.width, a.height)
     sheet = Image.new("RGBA", (CARD_W, CARD_H), INK + (255,))
     d = ImageDraw.Draw(sheet)
-    big, small = font(44, bold=True), font(22)
+    big, small, sub = font(44, bold=True), font(22), font(28)
     inner = CARD_W - 2 * CARD_PAD
-    lines = _wrap(d, note or tag, big, inner - 120)[:2]
-    text_h = 40 + 56 * len(lines)
+    head = title or note or tag
+    lines = _wrap(d, head, big, inner - 120)[:2]
+    subs = _wrap(d, note, sub, inner - 120)[:2] if title and note and note != title else []
+    text_h = 40 + 56 * len(lines) + 38 * len(subs)
     area_h = CARD_H - 2 * CARD_PAD - text_h
     gap = 16
     label = f"{tag.upper()} · PREVIEW" if preview else f"{tag.upper()} · FULL QUALITY"
@@ -177,6 +179,9 @@ def round_card(before: np.ndarray, after: np.ndarray, tag: str, note: str, path:
     for line in lines:
         d.text((left, y), line, fill=PAPER, font=big)
         y += 56
+    for line in subs:
+        d.text((left, y), line, fill=SOFT, font=sub)
+        y += 38
     sheet.convert("RGB").save(path, quality=90, icc_profile=icc)
 
 
@@ -493,7 +498,7 @@ ol.notes{margin:0;padding-left:20px;color:var(--soft);font-size:14px}
 <aside>
 <details id="changes" hidden><summary><span><b>What changed</b> <span class="small" id="count"></span></span><span class="act"></span></summary><div class="body" id="changesBody"></div></details>
 <details id="history" hidden><summary><span><b>How we got here</b> <span class="small" id="rounds"></span></span><span class="act"></span></summary><div class="body" id="historyBody"></div></details>
-<p class="foot">Rendered on your device. Nothing uploaded.</p>
+<p class="foot">Rendered by feedready. No outside service touches your photo.</p>
 </aside>
 </div>
 <script>
@@ -524,7 +529,7 @@ stage.addEventListener("contextmenu",e=>{if(mode==="hold")e.preventDefault()});
 addEventListener("keydown",e=>{if(e.key==="b"||e.key==="B")hold(true)});
 addEventListener("keyup",e=>{if(e.key==="b"||e.key==="B")hold(false)});
 D.versions.forEach((v,i)=>{const b=el("button",{class:"ver","aria-label":"v"+v.n+(v.note?": "+v.note:"")},[el("img",{src:v.after,alt:""}),el("span",{text:"v"+v.n})]);b.onclick=()=>{cur=i;paint()};$("vers").appendChild(b)});
-function copy(t){try{navigator.clipboard.writeText(t)}catch(e){}$("replyHint").textContent="Copied “"+t+"”. Paste it in the chat."}
+function copy(t){const say=m=>{$("replyHint").textContent=m};const typed=()=>say("Type “"+t+"” in the chat.");try{navigator.clipboard.writeText(t).then(()=>say("Copied “"+t+"”. Paste it in the chat."),typed)}catch(e){typed()}}
 const replies=["looks done"];if(D.versions.length>1)replies.push("back to v"+D.versions[D.versions.length-2].n);replies.push("more","less","warmer","cooler");
 replies.forEach(t=>{const b=el("button",{class:"reply",text:t});b.onclick=()=>copy(t);$("replies").appendChild(b)});
 $("export").onclick=()=>copy("export v"+D.versions[cur].n);
