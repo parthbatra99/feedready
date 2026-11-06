@@ -410,6 +410,24 @@ def test_review_units():
     lib.check("lens frames the mask as a padded square", x0 <= 40 and x1 >= 60 and y0 <= 30 and y1 >= 50
               and (x1 - x0) == (y1 - y0) and review._lens(None, 100, 100) == (0, 0, 100, 100))
     lib.check("lens keeps small masks at a quarter minimum", (x1 - x0) >= 25)
+    lib.check("shape classes split tall, portrait and landscape",
+              [review.shape(*wh) for wh in ((9, 16), (4, 5), (1, 1), (3, 2), (3, 1))]
+              == ["tall", "portrait", "portrait", "landscape", "landscape"])
+    out = lib.tmp() / "cards"
+    out.mkdir(exist_ok=True)
+    rng = np.random.default_rng(0)
+    for name, (w, h) in {"tall": (90, 160), "portrait": (160, 200), "landscape": (300, 120)}.items():
+        img = rng.random((h, w, 3)).astype(np.float32)
+        review.round_card(img * 0.5, img, "v2", "warmer on the ridge", out / f"{name}.jpg", preview=name != "tall")
+        lib.check(f"round card holds a {name} photo at 4:5", Image.open(out / f"{name}.jpg").size == (1080, 1350))
+    flat = np.full((200, 300, 3), 0.5, np.float32)
+    flat[120:150, 200:240] = rng.random((30, 40, 3))
+    (x, y, w, h), what = review.detail_box(flat, [], 60)
+    lib.check("detail crop finds the textured patch without faces",
+              what == "the most detailed patch" and x <= 220 <= x + w and y <= 135 <= y + h, f"{(x, y, w, h)}")
+    (x, y, w, h), what = review.detail_box(flat, [[0.1, 0.1, 0.3, 0.4]], 60)
+    lib.check("detail crop goes to the face when there is one", what == "the face" and x <= 60 <= x + w
+              and y <= 44 <= y + h and (w, h) == (60, 60), f"{(x, y, w, h)}")
 
 
 def test_opportunities():

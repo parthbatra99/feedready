@@ -95,8 +95,17 @@ def cli_loop(renderer, tmp, src):
                        {"name": "nothing", "adjust": {"temp": 1}}]}
     r1 = lib.cli(renderer, "preview", recipe=json.dumps(first), image=str(src), note="first")
     n = int(r1["version"][1:])
-    files = [r1[k] for k in ("preview", "compare", "map", "cards", "review")]
-    lib.check("preview writes the version, compare, map, cards and review page", all(Path(f).exists() for f in files))
+    files = [r1[k] for k in ("preview", "card", "compare", "map", "cards", "review")]
+    lib.check("preview writes the version, card, compare, map, cards and review page", all(Path(f).exists() for f in files))
+    lib.check("a small photo previews at full size and says so", r1["full_quality"] and r1["size"] == [600, 400],
+              f"{r1['full_quality']} {r1['size']}")
+    lib.check("the round card is a 4:5 chat image", Image.open(r1["card"]).size == (1080, 1350),
+              str(Image.open(r1["card"]).size))
+    page = Path(r1["review"]).read_text()
+    lib.check("the review page loads nothing from the network", "http://" not in page and "https://" not in page
+              and "//fonts." not in page)
+    lib.check("the review page carries each edit with its close-up", '"lensB": "data:image/jpeg' in page
+              and '"name": "warm grade"' in page)
     levels = [i["level"] for i in r1["impact"]]
     lib.check("impact sees the look and rates the no-op as none", levels[0] != "none" and levels[1] == "none",
               str(levels))
@@ -111,6 +120,10 @@ def cli_loop(renderer, tmp, src):
     exported = load_rgb(out)
     lib.check("apply renders a saved version at full resolution", exported.shape[:2] == (400, 600),
               str(exported.shape[:2]))
+    applied = lib.cli(renderer, "apply", recipe=r2["version"], image=str(src), output=str(tmp / f"proof_{renderer}.jpg"))
+    detail = applied.get("detail") or {}
+    lib.check("apply proves full quality with a 100% crop", detail.get("path") and Path(detail["path"]).exists()
+              and applied["megapixels"] == 0.2 and applied["version"] == r2["version"], str(detail))
     natural = json.dumps({"label": "N", "steps": [{"look": "natural"}]})
     mono = json.dumps({"label": "M", "steps": [{"look": "mono"}]})
     board = lib.cli(renderer, "board", image=str(src), recipes=[natural, natural, mono])
@@ -118,10 +131,10 @@ def cli_loop(renderer, tmp, src):
               and any("N and N" in t for t in board["too_similar"]) and not any("M" in t for t in board["too_similar"]),
               str(board["too_similar"]))
 
-    lib.check("preview json contract", set(r1) == {"version", "preview", "compare", "diff", "map", "cards", "review",
-                                                   "critique", "impact", "after", "warnings", "notes"},
-              str(sorted(set(r1) ^ {"version", "preview", "compare", "diff", "map", "cards", "review",
-                                    "critique", "impact", "after", "warnings", "notes"})))
+    lib.check("preview json contract", set(r1) == {"version", "preview", "full_quality", "size", "card", "compare", "diff", "map",
+                                                   "cards", "review", "critique", "impact", "after", "warnings", "notes"},
+              str(sorted(set(r1) ^ {"version", "preview", "full_quality", "size", "card", "compare", "diff", "map",
+                                    "cards", "review", "critique", "impact", "after", "warnings", "notes"})))
     lib.check("board json contract", set(board) == {"board", "tiles", "too_similar", "differences"})
     lib.check("critique json contract", set(r1["critique"]) == {"verdict", "issues", "skipped"}
               and r1["critique"]["verdict"] in ("clean", "needs work"))

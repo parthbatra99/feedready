@@ -28,6 +28,8 @@ Run every command from this skill's base directory: `<base>/run.sh <cmd>` on a M
 
 To show the user an image, use your tool for sending files (SendUserFile in the Claude Code app). If you have none, give the file's absolute path.
 
+**Show one thing per round, and make it the thing the next decision needs.** Most people read this on a phone. The round card (`card`) is the default: a 4:5 image that reads full width in a phone chat. The review page (`review`) is the same round with versions, hold-to-compare and the edits folded underneath; show it instead of the card when your surface can show an HTML page (an artifact, an HTML preview, a browser). Never stack the card, the compare, the cards and the map in one message.
+
 **Commands:**
 
 | command | what it does |
@@ -62,6 +64,15 @@ Downloads don't need a yes. Fetch what the work needs, then say what you fetched
 - **Models:** `inspect --fetch` (step 1) downloads the scene model and, off the Mac, the people models, which also give `subject` and `object` masks, so they come down for every photo, people in it or not. Anything a later edit needs (`heal`, HEIC) comes from the command in the `MissingCapability` error. Run it, mention it in a line, and carry on. Each claude.ai conversation starts clean, so this happens once per conversation.
 - **`unlock` in `inspect`** means a capability is still missing. Run its command before reaching for drawn shapes; a radial or polygon standing in for a detected mask is the last resort, and you say so when you use one.
 - **If a download fails** (`fetched[].ok` is false, or `bootstrap` reports `fallback`), run `probe` and tell the user what's blocked. Usually it's the sandbox's network setting: they can allow the domain in their settings, or attach the model files named in `still_needed` to the chat and you rerun with `--from` the uploads folder (`/mnt/user-data/uploads` on claude.ai). Hashes are checked, so renamed files are fine. Meanwhile, work with geometric masks and say so. Don't fake it with a poor approximation.
+
+## Several photos
+Up to 12 photos per chat. For 13 or more, say: "That's more than I can edit well in one chat. In Claude Cowork, attach the folder and I'll work through all of them, or pick the 12 that matter most here."
+
+Read what the user wants before editing. If it's unclear, ask once, in the same message as the vibe ("One look across all six for a carousel, or each on its own?"):
+- **One look, a set** ("carousel", "photo dump", "make them match"): pick the strongest frame as the hero and say why in a line. Run the brief and the board on the hero only. Then start every other photo from the hero's final recipe: keep the look, global sliders and detected masks (`sky`, `person`, `face`, `skin`, `segment`), and redo anything tied to the hero's coordinates (`radial`, `linear`, `brush`, `polygon`, `object`, `heal`) on each photo's own grid. Match brightness and white balance to the hero with a global step. An Instagram carousel shows every slide at one shape, so propose 4:5 for all and flag any photo the crop hurts.
+- **Each on its own:** one photo at a time, in the order given. Carry what you learned about their taste from photo to photo, and say where you are ("2 of 5").
+- **Which one?** ("which should I post?"): rank them, one line of reasoning each (sharpness, eyes, the light), and edit the one they pick. Never drop a photo silently.
+- **Like this one** ("make mine look like this"): the reference is not an edit target. Match its tone and colour, never export it, and keep it out of the set.
 
 ## 1. Read the photo
 Run `run.sh inspect PHOTO --fetch`, then look at the `original` and `grid` images. The grid has yellow lines every 10% labelled .1–.9, with each detected face boxed in cyan and numbered by its `index`. Read every coordinate you use from this grid, never by eye.
@@ -126,11 +137,13 @@ Each round produces one version, `vN`, that the user sees.
    |---|---|
    | `version` | the new version number |
    | `preview` | the render |
+   | `full_quality` | true when the photo is small enough (long edge 2048 px or less) that the preview is already full size |
+   | `card` | the round card: vN large with the original beside it, laid out for the photo's shape, labelled preview or full quality |
    | `compare` | before \| vN |
    | `diff` | the previous version \| vN |
    | `map` | numbered outlines of where each step lands |
    | `cards` | each step alone, zoomed to where it acts, ranked by measured impact |
-   | `review` | an HTML before/after slider across all versions |
+   | `review` | the review page: hold or split to compare, every version, the edits ranked with close-ups, the history |
    | `critique` | `verdict` plus `issues` |
    | `impact` | per-step change level |
 
@@ -145,14 +158,15 @@ Each round produces one version, `vN`, that the user sees.
    Revise and re-render up to 3 times. Mention self-caught fixes only if they matter ("I pulled the background back; it was haloing your hair").
 
    **Report what the critique says, not what you hoped.** Something is fixed only when the latest critique stops reporting it. A `fix` issue still open after 3 tries goes in your message as the one change you'd still make, with its number ("your face is still 0.4 stops darker than the wall"). Never write that a halo is gone, a face is the brightest thing, or shadows are eased while the latest critique says otherwise.
-4. **Show.** Show these files:
-   - The first round: `compare`, `cards` and `map`.
-   - Later rounds: `diff`.
-   - On the Mac, also `review` for the slider.
+4. **Show.** Every round: `review` where your surface can show a page, otherwise `card`. That's the whole message's imagery, unless one of these applies:
+   - **`map`**, the first time the user names a region in words ("the peaks", "that car"), for an object removal, when `notes` flags a weak or nearly empty mask, or when the note is about spill ("my hair is glowing"). It answers "are you editing the right thing?". Clean `sky`, `face` and `person` masks don't need it.
+   - **`cards`**, when the user asks what you did or why, or gives slider-level notes. On a phone the page's folded edits are enough.
+   - **`diff`**, only when you're showing the card and the change is too subtle to see against the original.
+   - **`compare`**, never during rounds; the card replaces it.
 
    Then write:
-   - **vN:** what you did and why, in plain words ("dimmed the wall so your face is the brightest thing").
-   - The one change you'd still make, if any.
+   - **vN:** what you did and why, in plain words ("dimmed the wall so your face is the brightest thing"). In the first round of a direction, name the three edits that carry it, one line each, from the top of `impact`.
+   - The one change you'd still make, if any. Critique numbers stay out unless the user asks why.
    - "Notes? ('warmer', 'less on the face', 'back to v2'), or 'ship it'."
 5. **Notes become the next round.** Translate them with vibes.md's notes table, and change only what the note is about.
    - **Vague notes** ("make it pop"): do the most likely reading and say what you took it as. Don't interrogate.
@@ -171,7 +185,9 @@ Run `run.sh apply vN PHOTO`. It renders that version at full resolution:
 - **Metadata:** none, so no GPS.
 - **Lossless:** if the user wants it, pass `-o NAME.png` for a 16-bit PNG.
 
-On the Mac it goes in `~/Pictures/feedready/`; show `output` and `compare`. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
+On the Mac it goes in `~/Pictures/feedready/`. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
+
+Previews are screen-size unless `full_quality` was true, so the user may wonder whether the export lost anything. Prove it didn't. Show `output` and `detail.path`, a 100% crop of the face (or the most detailed patch when there's no face), and say it in one line with the real numbers: "Full quality: 4032 × 5040, 20.3 MP, Display P3, 14.2 MB. Same edit as the v4 preview, rendered from your original; that's the face at 100%." Take the numbers from `size`, `megapixels`, `color_space` and `file_mb`. `compare` is there if they want a before/after to post. For a set, apply each photo in carousel order and name the files so they sort that way (`-o trek-01.jpg`).
 
 Close the way a photographer hands off: 2–4 lines on what you did to get the vibe.
 

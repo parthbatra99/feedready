@@ -9,17 +9,20 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from imaging import cv2, to_u8
+from imaging import cv2, gaussian, luma, to_u8
 
 INK = (24, 24, 27)
 MUTED = (160, 160, 170)
+ACCENT = (232, 163, 61)
 COLORS = [(255, 94, 58), (52, 199, 89), (10, 132, 255), (255, 204, 0), (191, 90, 242), (100, 210, 255),
           (255, 55, 95), (172, 142, 104), (0, 199, 190), (94, 92, 230), (255, 159, 10), (142, 142, 147)]
 LEVEL_FILL = {"none": 0.04, "subtle": 0.25, "clear": 0.6, "strong": 1.0}
 
 
-def font(size: int):
-    for name in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc", "DejaVuSans.ttf"):
+def font(size: int, bold: bool = False):
+    names = (("/System/Library/Fonts/Supplemental/Arial Bold.ttf", "DejaVuSans-Bold.ttf") if bold else
+             ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc", "DejaVuSans.ttf"))
+    for name in names:
         try:
             return ImageFont.truetype(name, size)
         except OSError:
@@ -91,6 +94,108 @@ def pair(left: np.ndarray, right: np.ndarray, labels: tuple[str, str], path: Pat
     for x, label in ((10, labels[0]), (a.width + 18, labels[1])):
         draw.text((x, 8), label, fill="white", font=f, stroke_width=3, stroke_fill="black")
     sheet.save(path, quality=90, icc_profile=icc)
+
+
+CARD_W, CARD_H, CARD_PAD = 1080, 1350, 40
+PAPER = (237, 233, 226)
+SOFT = (184, 178, 167)
+
+
+def shape(w: int, h: int) -> str:
+    r = w / h
+    return "tall" if r < 0.65 else "portrait" if r <= 1.15 else "landscape"
+
+
+def _fit(im: Image.Image, w: int, h: int) -> Image.Image:
+    s = min(w / im.width, h / im.height)
+    return im.resize((max(1, round(im.width * s)), max(1, round(im.height * s))), Image.LANCZOS)
+
+
+def _rounded(im: Image.Image, r: int) -> Image.Image:
+    m = Image.new("L", im.size, 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, im.width - 1, im.height - 1], r, fill=255)
+    out = Image.new("RGBA", im.size)
+    out.paste(im.convert("RGB"), (0, 0), m)
+    return out
+
+
+def _pill(d: ImageDraw.ImageDraw, xy, text: str, f, ink=PAPER, anchor: str = "lt"):
+    x, y = xy
+    tw = int(d.textlength(text, font=f))
+    th = getattr(f, "size", 16)
+    pad_x, pad_y = th // 2, th // 3
+    if anchor == "rt":
+        x -= tw + 2 * pad_x
+    d.rounded_rectangle([x, y, x + tw + 2 * pad_x, y + th + 2 * pad_y], th // 3, fill=(18, 17, 16, 200))
+    d.text((x + pad_x, y + pad_y + th // 2), text, fill=ink, font=f, anchor="lm")
+
+
+def round_card(before: np.ndarray, after: np.ndarray, tag: str, note: str, path: Path,
+               icc: bytes | None = None, preview: bool = True) -> None:
+    a, b = Image.fromarray(to_u8(after)), Image.fromarray(to_u8(before))
+    kind = shape(a.width, a.height)
+    sheet = Image.new("RGBA", (CARD_W, CARD_H), INK + (255,))
+    d = ImageDraw.Draw(sheet)
+    big, small = font(44, bold=True), font(22)
+    inner = CARD_W - 2 * CARD_PAD
+    lines = _wrap(d, note or tag, big, inner - 120)[:2]
+    text_h = 40 + 56 * len(lines)
+    area_h = CARD_H - 2 * CARD_PAD - text_h
+    gap = 16
+    label = f"{tag.upper()} · PREVIEW" if preview else f"{tag.upper()} · FULL QUALITY"
+    if kind == "tall":
+        bw, aw = _fit(b, (inner - gap) // 2, area_h), _fit(a, (inner - gap) // 2, area_h)
+        y = CARD_PAD + (area_h - aw.height) // 2
+        x = CARD_PAD + (inner - bw.width - gap - aw.width) // 2
+        sheet.alpha_composite(_rounded(bw, 14), (x, y))
+        sheet.alpha_composite(_rounded(aw, 14), (x + bw.width + gap, y))
+        left = x
+        _pill(d, (x + 16, y + 16), "BEFORE", small)
+        _pill(d, (x + bw.width + gap + aw.width - 16, y + 16), label, small, ACCENT, "rt")
+    elif kind == "portrait":
+        aw = _fit(a, inner, area_h)
+        x, y = CARD_PAD + (inner - aw.width) // 2, CARD_PAD + (area_h - aw.height) // 2
+        sheet.alpha_composite(_rounded(aw, 16), (x, y))
+        left = x
+        inset = _fit(b, int(aw.width * 0.27), int(aw.height * 0.34))
+        ix, iy = x + 24, y + aw.height - inset.height - 24
+        d.rounded_rectangle([ix - 3, iy - 3, ix + inset.width + 2, iy + inset.height + 2], 12, fill=PAPER)
+        sheet.alpha_composite(_rounded(inset, 10), (ix, iy))
+        _pill(d, (ix, iy - 48), "BEFORE", small)
+        _pill(d, (x + aw.width - 24, y + 24), label, small, ACCENT, "rt")
+    else:
+        half = (area_h - gap) // 2
+        bw, aw = _fit(b, inner, half), _fit(a, inner, half)
+        top = CARD_PAD + (area_h - bw.height - gap - aw.height) // 2
+        bx, ax = CARD_PAD + (inner - bw.width) // 2, CARD_PAD + (inner - aw.width) // 2
+        sheet.alpha_composite(_rounded(bw, 14), (bx, top))
+        left = min(bx, ax)
+        sheet.alpha_composite(_rounded(aw, 14), (ax, top + bw.height + gap))
+        _pill(d, (bx + 16, top + 16), "BEFORE", small)
+        _pill(d, (ax + aw.width - 16, top + bw.height + gap + 16), label, small, ACCENT, "rt")
+    y = CARD_H - CARD_PAD - text_h + 40
+    for line in lines:
+        d.text((left, y), line, fill=PAPER, font=big)
+        y += 56
+    sheet.convert("RGB").save(path, quality=90, icc_profile=icc)
+
+
+def detail_box(img: np.ndarray, faces: list[list[float]], side: int) -> tuple[tuple[int, int, int, int], str]:
+    H, W = img.shape[:2]
+    side = min(side, H, W)
+    if faces:
+        x0, y0, x1, y1 = max(faces, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
+        cx, cy, what = (x0 + x1) / 2 * W, (y0 + (y1 - y0) * 0.4) * H, "the face"
+    else:
+        g = luma(img[::4, ::4]) if img.shape[0] >= 64 else luma(img)
+        step = 4 if img.shape[0] >= 64 else 1
+        gy, gx = np.gradient(g)
+        energy = gaussian(np.hypot(gx, gy).astype(np.float32), max(1.0, side / step / 6))
+        y, x = np.unravel_index(int(energy.argmax()), energy.shape)
+        cx, cy, what = x * step, y * step, "the most detailed patch"
+    x = int(min(max(cx - side / 2, 0), W - side))
+    y = int(min(max(cy - side / 2, 0), H - side))
+    return (x, y, side, side), what
 
 
 def describe(adjust: dict, look: str | None = None, amount: float | None = None) -> str:
@@ -259,75 +364,190 @@ def board(tiles: list[tuple[str, str, np.ndarray]], path: Path, icc: bytes | Non
     sheet.save(path, quality=88, icc_profile=icc)
 
 
-def _data_uri(path: Path, edge: int = 1400) -> str:
-    im = Image.open(path).convert("RGB")
+def _uri(im: Image.Image, edge: int, quality: int = 84) -> str:
+    im = im.convert("RGB")
     im.thumbnail((edge, edge), Image.LANCZOS)
     buf = BytesIO()
-    im.save(buf, "JPEG", quality=84)
+    im.save(buf, "JPEG", quality=quality)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def review_html(title: str, versions: list[dict], path: Path) -> None:
+def _data_uri(path: Path, edge: int = 1400) -> str:
+    return _uri(Image.open(path), edge)
+
+
+def lens_pair(before: np.ndarray, after: np.ndarray, mask: np.ndarray | None, edge: int = 360) -> tuple[str, str]:
+    H, W = before.shape[:2]
+    x0, y0, x1, y1 = _lens(mask, W, H)
+    return (_uri(Image.fromarray(to_u8(before[y0:y1, x0:x1])), edge, 80),
+            _uri(Image.fromarray(to_u8(after[y0:y1, x0:x1])), edge, 80))
+
+
+def hex_color(i: int) -> str:
+    return "#%02x%02x%02x" % color(i)
+
+
+FULL_VERSIONS = 6
+
+
+def review_html(path: Path, title: str, versions: list[dict], *, subtitle: str = "", steps: list[dict] | None = None,
+                edit_map: Path | None = None, board: Path | None = None, still_open: str | None = None,
+                full_quality: bool = False) -> None:
     befores, entries = {}, []
-    for v in versions:
+    for k, v in enumerate(versions):
         key = str(v["before"])
         if key not in befores:
             befores[key] = _data_uri(v["before"])
-        entries.append({"n": v["n"], "note": v.get("note", ""), "after": _data_uri(v["after"]), "before": key})
-    data = json.dumps({"befores": befores, "versions": entries})
-    path.write_text(PAGE.replace("__TITLE__", html.escape(title)).replace("__DATA__", data.replace("</", "<\\/")))
+        full = k >= len(versions) - FULL_VERSIONS
+        entries.append({"n": v["n"], "note": v.get("note", ""), "after": _data_uri(v["after"], 1400 if full else 480),
+                        "before": key})
+    data = {"title": title, "subtitle": subtitle, "befores": befores, "versions": entries,
+            "steps": steps or [], "map": _data_uri(edit_map, 1000) if edit_map and edit_map.exists() else None,
+            "board": _data_uri(board, 1400) if board and board.exists() else None,
+            "stillOpen": still_open, "fullQuality": full_quality}
+    blob = json.dumps(data).replace("</", "<\\/")
+    path.write_text(PAGE.replace("__TITLE__", html.escape(title)).replace("__DATA__", blob))
 
 
 PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <title>__TITLE__</title>
 <style>
-:root{--bg:#141416;--panel:#1d1d21;--ink:#f2f2f5;--muted:#9a9aa6;--line:#2c2c33;--accent:#ff9f43}
+:root{--bg:#121110;--panel:#1b1a18;--line:#2b2925;--ink:#ede9e2;--soft:#b8b2a7;--muted:#9c968c;--accent:#e8a33d;--ok:#8fc79a;--okbg:#1d2a1f;--warnbg:#2a2113}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif}
-main{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
-header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-h1{font-size:18px;font-weight:600;margin:0}
-.hint{color:var(--muted);font-size:13px}
-.stage{position:relative;margin:0 auto;user-select:none;touch-action:none;cursor:ew-resize;background:#000;border-radius:10px;overflow:hidden;max-height:78vh;width:fit-content;max-width:100%}
-.stage img{display:block;max-width:100%;max-height:78vh}
-.stage img.before{position:absolute;inset:0;width:100%;height:100%;clip-path:inset(0 calc(100% - var(--x)) 0 0)}
-.handle{position:absolute;top:0;bottom:0;left:var(--x);width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);transform:translateX(-1px)}
-.handle::after{content:"";position:absolute;top:50%;left:50%;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.5)}
-.tag{position:absolute;top:10px;padding:3px 9px;border-radius:6px;background:rgba(0,0,0,.6);font-size:12px;letter-spacing:.04em;text-transform:uppercase}
-.tag.l{left:10px}.tag.r{right:10px}
-.note{margin:14px auto 0;max-width:760px;color:var(--ink);text-align:center;min-height:1.4em}
-nav{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px}
-nav button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font:inherit;cursor:pointer}
-nav button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
-</style></head><body><main>
-<header><h1>__TITLE__</h1><span class="hint">Drag to compare &middot; &larr; &rarr; move the split &middot; 1&ndash;9 pick a version &middot; hold B for before</span></header>
-<div class="stage" id="stage" style="--x:50%">
-<img class="after" id="after" alt="after"><img class="before" id="before" alt="before">
-<div class="handle"></div><span class="tag l">before</span><span class="tag r" id="rtag">after</span>
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 16px 40px;display:flex;flex-wrap:wrap;gap:20px 32px;align-items:flex-start}
+header{flex:1 1 100%;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.eyebrow{font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+h1{margin:2px 0 0;font-size:21px;font-weight:600;letter-spacing:-.01em}
+.badge{flex:none;padding:5px 10px;border-radius:999px;font-size:13px;background:var(--warnbg);color:var(--accent)}
+.badge.ok{background:var(--okbg);color:var(--ok)}
+main{flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:14px}
+aside{flex:1 1 400px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.stage{position:relative;margin:0 auto;width:fit-content;max-width:100%;border-radius:12px;overflow:hidden;background:#000;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer}
+.stage img{display:block;max-width:100%;max-height:62vh;max-height:62svh;width:auto;height:auto}
+.stage img.before{position:absolute;inset:0;width:100%;height:100%;max-height:none;clip-path:inset(0 calc(100% - var(--x,0%)) 0 0)}
+.stage .tag{position:absolute;top:10px;right:10px;padding:4px 9px;border-radius:6px;background:rgba(18,17,16,.75);font:12px ui-monospace,Menlo,monospace;color:var(--accent);pointer-events:none}
+.stage .hint{position:absolute;left:10px;bottom:10px;padding:5px 10px;border-radius:6px;background:rgba(18,17,16,.75);font-size:13px;pointer-events:none}
+.stage .bar{position:absolute;top:0;bottom:0;left:var(--x,0%);width:2px;margin-left:-1px;background:var(--ink);display:none;pointer-events:none}
+.stage.split .bar{display:block}
+.stage input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:ew-resize;display:none}
+.stage.split input{display:block}
+.seg{display:flex;gap:4px;padding:4px;margin:0 auto;border:1px solid var(--line);border-radius:10px}
+.seg button{min-height:36px;min-width:72px;padding:0 14px;border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--line);color:var(--ink)}
+.note{margin:0;text-align:center;color:var(--soft)}
+.open{margin:0;padding:10px 14px;border-radius:10px;background:var(--warnbg);color:var(--ink);font-size:14px}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.ver{flex:none;display:flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:8px;border:1px solid var(--line);background:var(--panel);cursor:pointer;min-height:44px}
+.ver img{height:48px;width:auto;max-width:64px;object-fit:cover;border-radius:4px;display:block}
+.ver span{font:13px ui-monospace,Menlo,monospace}
+.ver[aria-pressed=true]{border-color:var(--accent)}
+.small{font-size:13px;color:var(--muted)}
+.reply{flex:none;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
+.primary{display:flex;align-items:center;justify-content:center;gap:10px;min-height:52px;border:0;border-radius:12px;background:var(--accent);color:#121110;font-weight:600;cursor:pointer;width:100%}
+details{border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+summary{list-style:none;display:flex;justify-content:space-between;align-items:center;min-height:52px;padding:0 16px;cursor:pointer}
+summary::-webkit-details-marker{display:none}
+summary b{font-weight:500}
+summary .act{color:var(--muted);font-size:14px}
+details[open] summary .act::after{content:"Hide"}
+details:not([open]) summary .act::after{content:"Show"}
+.body{padding:0 12px 14px;display:flex;flex-direction:column;gap:12px}
+.lead{display:flex;gap:12px;align-items:center}
+.pair{flex:none;display:flex;gap:2px}
+.pair img{width:76px;height:76px;object-fit:cover;display:block}
+.pair img:first-child{border-radius:8px 0 0 8px}.pair img:last-child{border-radius:0 8px 8px 0}
+.dot{flex:none;width:22px;height:22px;border-radius:50%;color:#121110;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.name{font-weight:500}
+.why{font-size:13px;color:var(--soft)}
+.moves{font:12px ui-monospace,Menlo,monospace;color:var(--muted)}
+.row{display:flex;align-items:center;gap:10px;min-height:40px;border-top:1px solid #22201d}
+.row .name{flex:1 1 auto;font-weight:400;font-size:14px}
+.label{font-size:12px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.map{width:100%;border-radius:8px;display:block}
+.hist{width:100%;border-radius:8px;display:block}
+ol.notes{margin:0;padding-left:20px;color:var(--soft);font-size:14px}
+.foot{margin:4px 0 0;font-size:13px;color:var(--muted)}
+@media (min-width:1000px){.stage img{max-height:68vh;max-height:68svh}}
+</style></head><body>
+<div class="wrap">
+<header><div><div class="eyebrow" id="eyebrow"></div><h1 id="title"></h1></div><span class="badge" id="badge"></span></header>
+<main>
+<div class="stage" id="stage" style="--x:0%">
+<img class="after" id="after" alt=""><img class="before" id="before" alt="The photo as shot">
+<div class="bar"></div><span class="tag" id="tag"></span><span class="hint" id="hint"></span>
+<input type="range" min="0" max="100" value="50" id="split" aria-label="Before and after split">
 </div>
+<div class="seg" role="group" aria-label="Compare mode"><button id="mHold" aria-pressed="true">Hold</button><button id="mSplit" aria-pressed="false">Split</button></div>
 <p class="note" id="note"></p>
-<nav id="nav"></nav>
+<p class="open" id="open" hidden></p>
+<div class="chips" id="vers" aria-label="Versions"></div>
+<div><div class="small" id="replyHint">Say what to change in the chat, or tap one to copy it</div>
+<div class="chips" id="replies" style="margin-top:8px"></div></div>
+<button class="primary" id="export"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg><span id="exportLabel">Export full quality</span></button>
 </main>
+<aside>
+<details id="changes" hidden><summary><span><b>What changed</b> <span class="small" id="count"></span></span><span class="act"></span></summary><div class="body" id="changesBody"></div></details>
+<details id="history" hidden><summary><span><b>How we got here</b> <span class="small" id="rounds"></span></span><span class="act"></span></summary><div class="body" id="historyBody"></div></details>
+<p class="foot">Rendered on your device. Nothing uploaded.</p>
+</aside>
+</div>
 <script>
 const D=__DATA__;
-const stage=document.getElementById("stage"),after=document.getElementById("after"),before=document.getElementById("before");
-const note=document.getElementById("note"),nav=document.getElementById("nav"),rtag=document.getElementById("rtag");
-let x=50,cur=D.versions.length-1;
-function setX(v){x=Math.max(0,Math.min(100,v));stage.style.setProperty("--x",x+"%")}
-function show(i){cur=i;const v=D.versions[i];after.src=v.after;before.src=D.befores[v.before];note.textContent=v.note||"";rtag.textContent="v"+v.n;
-[...nav.children].forEach((b,j)=>b.setAttribute("aria-pressed",j===i))}
-D.versions.forEach((v,i)=>{const b=document.createElement("button");b.textContent="v"+v.n;b.onclick=()=>show(i);nav.appendChild(b)});
-function fromEvent(e){const r=stage.getBoundingClientRect();setX((e.clientX-r.left)/r.width*100)}
-let drag=false;
-stage.addEventListener("pointerdown",e=>{drag=true;stage.setPointerCapture(e.pointerId);fromEvent(e)});
-stage.addEventListener("pointermove",e=>{if(drag)fromEvent(e)});
-stage.addEventListener("pointerup",()=>{drag=false});
-let held=null;
-addEventListener("keydown",e=>{if(e.key==="ArrowLeft")setX(x-5);else if(e.key==="ArrowRight")setX(x+5);
-else if((e.key==="b"||e.key==="B")&&held===null){held=x;setX(100)}
-else if(/^[1-9]$/.test(e.key)&&+e.key<=D.versions.length)show(+e.key-1)});
-addEventListener("keyup",e=>{if((e.key==="b"||e.key==="B")&&held!==null){setX(held);held=null}});
-show(cur);
+const $=id=>document.getElementById(id);
+const el=(tag,attrs,kids)=>{const e=document.createElement(tag);for(const k in attrs||{}){if(k==="text")e.textContent=attrs[k];else e.setAttribute(k,attrs[k])}for(const c of kids||[])e.appendChild(c);return e};
+const stage=$("stage"),after=$("after"),before=$("before"),split=$("split");
+let cur=D.versions.length-1,mode="hold",holding=false;
+const latest=()=>D.versions[D.versions.length-1];
+function setX(v){stage.style.setProperty("--x",v+"%")}
+function paint(){
+  const v=D.versions[cur];
+  after.src=v.after;after.alt="v"+v.n+": "+(v.note||"");before.src=D.befores[v.before];
+  const shown=mode==="hold"?(holding?100:0):+split.value;setX(shown);
+  $("tag").textContent=mode==="hold"&&holding?"AS SHOT":"V"+v.n+(D.fullQuality?" · FULL QUALITY":" · PREVIEW");
+  $("hint").textContent=mode==="split"?"Drag to compare":holding?"Original":"Press and hold for the original";
+  $("note").textContent="v"+v.n+(v.note?" · "+v.note:"");
+  [...$("vers").children].forEach((b,i)=>b.setAttribute("aria-pressed",i===cur));
+  $("exportLabel").textContent=D.fullQuality?"Save v"+v.n+", already full size":"Export v"+v.n+" at full quality";
+}
+function setMode(m){mode=m;stage.classList.toggle("split",m==="split");$("mHold").setAttribute("aria-pressed",m==="hold");$("mSplit").setAttribute("aria-pressed",m==="split");if(m==="split")split.value=50;holding=false;paint()}
+$("mHold").onclick=()=>setMode("hold");$("mSplit").onclick=()=>setMode("split");
+split.oninput=paint;
+const hold=on=>{if(mode!=="hold"||holding===on)return;holding=on;paint()};
+stage.addEventListener("pointerdown",e=>{if(mode==="hold"){e.preventDefault();hold(true)}});
+for(const ev of ["pointerup","pointerleave","pointercancel"])stage.addEventListener(ev,()=>hold(false));
+stage.addEventListener("contextmenu",e=>{if(mode==="hold")e.preventDefault()});
+addEventListener("keydown",e=>{if(e.key==="b"||e.key==="B")hold(true)});
+addEventListener("keyup",e=>{if(e.key==="b"||e.key==="B")hold(false)});
+D.versions.forEach((v,i)=>{const b=el("button",{class:"ver","aria-label":"v"+v.n+(v.note?": "+v.note:"")},[el("img",{src:v.after,alt:""}),el("span",{text:"v"+v.n})]);b.onclick=()=>{cur=i;paint()};$("vers").appendChild(b)});
+function copy(t){try{navigator.clipboard.writeText(t)}catch(e){}$("replyHint").textContent="Copied “"+t+"”. Paste it in the chat."}
+const replies=["looks done"];if(D.versions.length>1)replies.push("back to v"+D.versions[D.versions.length-2].n);replies.push("more","less","warmer","cooler");
+replies.forEach(t=>{const b=el("button",{class:"reply",text:t});b.onclick=()=>copy(t);$("replies").appendChild(b)});
+$("export").onclick=()=>copy("export v"+D.versions[cur].n);
+$("eyebrow").textContent="Round "+latest().n+(D.subtitle?" · "+D.subtitle:"");
+$("title").textContent=D.title;
+const badge=$("badge");badge.textContent=D.stillOpen?"One fix left":D.fullQuality?"Full quality":"Your turn";if(!D.stillOpen&&D.fullQuality)badge.classList.add("ok");
+if(D.stillOpen){$("open").hidden=false;$("open").textContent="I’d still change: "+D.stillOpen}
+const level={none:0,subtle:1,clear:2,strong:3};
+const meter=l=>{const s=el("span",{style:"flex:none;display:flex;gap:3px","aria-label":l+" impact"});for(let i=1;i<=3;i++)s.appendChild(el("span",{style:"width:10px;height:4px;border-radius:2px;background:"+(level[l]>=i?"var(--accent)":"var(--line)")}));return s};
+if(D.steps.length){
+  const box=$("changesBody");$("changes").hidden=false;$("count").textContent="· "+D.steps.length+(D.steps.length===1?" edit":" edits");
+  const top=D.steps.slice(0,3),rest=D.steps.slice(3);
+  box.appendChild(el("div",{class:"label",text:top.length<D.steps.length?"The ones that matter":"Each edit"}));
+  for(const s of top){box.appendChild(el("div",{class:"lead"},[el("div",{class:"pair"},[el("img",{src:s.lensB,alt:"Before: "+s.name}),el("img",{src:s.lensA,alt:"After: "+s.name})]),el("div",{style:"min-width:0;display:flex;flex-direction:column;gap:2px"},[el("div",{style:"display:flex;align-items:center;gap:8px"},[el("span",{class:"dot",style:"background:"+s.color,text:String(s.n)}),el("span",{class:"name",text:s.name})]),el("span",{class:"why",text:s.why||""}),el("span",{class:"moves",text:s.summary||""})])]))}
+  if(rest.length){box.appendChild(el("div",{class:"label",text:"And the smaller ones"}));const list=el("div");for(const s of rest)list.appendChild(el("div",{class:"row"},[el("span",{class:"dot",style:"background:"+s.color,text:String(s.n)}),el("span",{class:"name",text:s.name}),meter(s.level)]));box.appendChild(list)}
+  if(D.map)box.appendChild(el("img",{class:"map",src:D.map,alt:"Where each edit lands, numbered"}));
+}
+if(D.versions.length>1||D.board){
+  const box=$("historyBody");$("history").hidden=false;$("rounds").textContent="· "+D.versions.length+(D.versions.length===1?" round":" rounds");
+  if(D.board)box.appendChild(el("img",{class:"hist",src:D.board,alt:"The directions board"}));
+  const ol=el("ol",{class:"notes"});for(const v of D.versions)ol.appendChild(el("li",{text:"v"+v.n+(v.note?" · "+v.note:"")}));box.appendChild(ol);
+}
+const wide=matchMedia("(min-width: 1000px)");const fit=()=>{if(wide.matches)$("changes").open=true};fit();wide.addEventListener("change",fit);
+paint();
 </script></body></html>
 """

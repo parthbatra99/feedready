@@ -35,8 +35,8 @@ cd feedready/skills/feedready
 | `inspect` | a coordinate grid, brightness stats, faces, scene classes, a `profile` (genre and hero), and `diagnostics.findings` (each problem with a ready-made recipe step) |
 | `masks` | a contact sheet with every step's mask in red |
 | `board` | the original next to each recipe or saved version, plus a `too_similar` warning for look-alike tiles |
-| `preview` | a screen-size render saved as the next version (`v1`, `v2`…), with a compare, a diff against the last version, edit cards, an edit map, a review page and a measured `critique` |
-| `apply` | the full-resolution photo and compare image, in `~/Pictures/feedready/` unless you pass `-o`. The recipe can be a saved version such as `v3`. |
+| `preview` | a screen-size render saved as the next version (`v1`, `v2`…), or full size when the long edge is 2048 px or less (`full_quality`), with a 4:5 round card, a compare, a diff against the last version, edit cards, an edit map, a phone-first review page and a measured `critique` |
+| `apply` | the full-resolution photo and compare image, in `~/Pictures/feedready/` unless you pass `-o`, plus `detail`: a 100% crop of the face or the most detailed patch, saved in the work dir, as proof of quality. The recipe can be a saved version such as `v3`. |
 
 A recipe is JSON, passed as a file or an inline string. This one crops for Instagram, brightens the eyes, adds bite to the snow caps and removes a reflective strip:
 
@@ -86,7 +86,7 @@ All paths are under `skills/feedready/`:
 | `scripts/feedready.py` | the CLI: working copy, saved versions, and the `inspect`, `board`, `preview` and `apply` flows |
 | `scripts/render.py` | one render path for every command: looks resolved, prepass, crop, Core Image or numpy |
 | `scripts/critique.py` | the self-review on each version: per-step impact, halos, skin, clipping, face vs background, HDR crunch, noise, and board similarity |
-| `scripts/review.py` | everything you look at: grid, mask sheet, compare, edit cards, edit map, board, and the HTML review page |
+| `scripts/review.py` | everything you look at: grid, mask sheet, compare, round card, edit cards, edit map, board, the export's 100% crop, and the phone-first HTML review page |
 | `scripts/diagnose.py` | the photo `profile` and the checks behind every finding (exposure, subject vs background, face vs background, face, skin-aware colour cast, haze, sky, bright distractions, headroom and crop). Add a check as one function in `CHECKS`. |
 | `scripts/masks.py` | mask specs to masks, from simple shapes to EdgeTAM objects, plus combinators and edge refinement |
 | `scripts/detect.py` | model access, per-photo caching, and which vision backend runs (Apple or portable). Every model path lives here. |
@@ -125,9 +125,9 @@ Run it from the repo root; it must end with `ALL PASSED`. The suites run in orde
 
 | Suite | Covers |
 |---|---|
-| `units` | exact values for the looks/slider/preset tables, colour math, tone curves, white balance, hsl, crop geometry, mask geometry (including face `index: "all"`, main faces and modifier lint), imaging roundtrips and cv2-vs-fallback branch parity |
+| `units` | exact values for the looks/slider/preset tables, colour math, tone curves, white balance, hsl, crop geometry, mask geometry (including face `index: "all"`, main faces and modifier lint), round card layouts per shape, the 100% crop picker, imaging roundtrips and cv2-vs-fallback branch parity |
 | `docs` | `reference/recipe.md`, `reference/vibes.md` and `SKILL.md` stay in sync with the code, and the Swift engine handles every op `build_ops` emits |
-| `render` | every slider's direction on both renderers, the CLI loop, diagnostics, object masks, heal, `doctor`/`masks`, the error paths, and the phone path: a half-installed OpenCV (contrib namespace without `guidedFilter`, as claude.ai ships it), people models fetched for photos with nobody in them, `unlock` kept when a fetch fails, the `summary` block, relative `apply -o`, and mask notes |
+| `render` | every slider's direction on both renderers, the CLI loop, diagnostics, object masks, heal, `doctor`/`masks`, the error paths, and the phone path: a half-installed OpenCV (contrib namespace without `guidedFilter`, as claude.ai ships it), people models fetched for photos with nobody in them, `unlock` kept when a fetch fails, the `summary` block, relative `apply -o`, mask notes, the round card and full-quality preview, the review page's no-network rule, and the export's 100% crop |
 | `engine` | Core Image vs numpy parity per op, engine determinism, and the render-plan schema |
 | `portable` | the portable vision backend against Apple Vision on the corpus: face boxes, pupils, person and subject masks, no missed person when a face is visible, halo from a −0.4 EV background move through each mask (median ≤ 0.10 stops at its own edge and at Vision's), `person` with `faces`, `skin` coverage and smoothness, and the `vision.json` schema |
 | `golden` | pixel goldens for the numpy tier on synthetic fixtures, stored in `tests/golden/` |

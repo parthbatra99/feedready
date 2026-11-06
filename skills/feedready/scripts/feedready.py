@@ -58,6 +58,8 @@ CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
 LARGE_MEGAPIXELS = 30
 WORKING_COPY_VERSION = 2
 PREVIEW_EDGE = 1600
+FULL_QUALITY_EDGE = 2048
+DETAIL_SIDE = 600
 SINGLE_EDGE = 900
 BOARD_EDGE = 900
 SIMILAR = 0.025
@@ -439,10 +441,22 @@ def cmd_apply(args) -> dict:
     compare = out.with_name(out.stem + "-compare.jpg")
     review.pair(before, result, ("before", "after"), compare, s.icc)
     (s.work / "last_recipe.json").write_text(json.dumps(recipe, indent=2))
+    detail = None
+    frame_w, frame_h = (crop[2], crop[3]) if crop else (s.img.shape[1], s.img.shape[0])
+    if (result.shape[1], result.shape[0]) == (frame_w, frame_h):
+        faces = _frame_faces(s.scene, crop, s.img.shape[1], s.img.shape[0]) if vision_backend() else []
+        (x, y, w, h), what = review.detail_box(result, faces, DETAIL_SIDE)
+        path = s.work / "export" / f"{out.stem}-100.jpg"
+        path.parent.mkdir(exist_ok=True)
+        save_jpeg(result[y:y + h, x:x + w], path, 95, s.icc)
+        detail = {"path": str(path), "of": what}
     return {
         "output": str(out),
         "compare": str(compare),
+        "detail": detail,
+        "version": ref.lower() if VERSION.fullmatch(ref) else None,
         "size": [result.shape[1], result.shape[0]],
+        "megapixels": round(result.shape[0] * result.shape[1] / 1e6, 1),
         "file_mb": round(out.stat().st_size / 1e6, 1),
         "color_space": "display-p3" if s.icc else "srgb",
         "renderer": "core-image" if s.engine else "numpy",
@@ -493,6 +507,24 @@ def _singles(s: Session, recipe: dict, steps: list[dict], built: list):
     return tiny, singles, impacts
 
 
+def destination(recipe: dict) -> str:
+    preset = recipe.get("preset", "original")
+    aspect = (recipe.get("crop") or {}).get("aspect") or develop.PRESETS.get(preset, {}).get("aspect")
+    if isinstance(aspect, (list, tuple)):
+        aspect = f"{aspect[0]}:{aspect[1]}"
+    name = {"instagram": "Instagram", "story": "Story", "linkedin": "LinkedIn"}.get(preset, "")
+    return " ".join(p for p in (name, aspect or "") if p) or "as shot"
+
+
+def _page_steps(tiny: np.ndarray, singles: list[dict]) -> list[dict]:
+    out = []
+    for c in sorted(singles, key=lambda c: -c["rank_score"]):
+        lens_b, lens_a = review.lens_pair(tiny, c["after"], c["mask"])
+        out.append({"n": c["index"] + 1, "name": c["name"], "why": c.get("why", ""), "summary": c["summary"],
+                    "level": c["level"], "color": review.hex_color(c["index"]), "lensB": lens_b, "lensA": lens_a})
+    return out
+
+
 def cmd_preview(args) -> dict:
     s = Session(Path(args.image).expanduser())
     recipe = s.recipe(args.recipe)
@@ -503,7 +535,9 @@ def cmd_preview(args) -> dict:
     n = (previous[-1] if previous else 0) + 1
     tag = f"v{n}"
 
-    small, small_masks, source = s.scaled(built, PREVIEW_EDGE)
+    long_edge = max(s.img.shape[:2])
+    full_quality = long_edge <= FULL_QUALITY_EDGE and not recipe.get("max_edge")
+    small, small_masks, source = s.scaled(built, long_edge if full_quality else PREVIEW_EDGE)
     out = vdir / f"{tag}.jpg"
     crop = s.render(small, steps, small_masks, recipe, out, "preview", source, full_size=False)
     after = load_rgb(out)
@@ -530,20 +564,28 @@ def cmd_preview(args) -> dict:
     if singles:
         cards = vdir / f"{tag}-cards.jpg"
         review.cards(tiny, singles, cards, s.icc)
+    card = vdir / f"{tag}-card.jpg"
+    review.round_card(before, after, tag, args.note or recipe.get("note", ""), card, s.icc, preview=not full_quality)
 
     (vdir / f"{tag}.json").write_text(json.dumps(recipe, indent=2))
     index = version_index(s.work)
     index[str(n)] = {"note": args.note, "before": before_path.name, "verdict": verdict["verdict"]}
     (vdir / "index.json").write_text(json.dumps(index, indent=2))
     page = s.work / "review.html"
-    review.review_html(f"{s.src.stem} · {tag}", [
+    still_open = next((i["issue"] for i in verdict["issues"] if i["severity"] == "fix"), None)
+    review.review_html(page, recipe.get("label") or s.src.stem, [
         {"n": k, "note": index.get(str(k), {}).get("note", ""), "after": vdir / f"v{k}.jpg",
          "before": vdir / index.get(str(k), {}).get("before", before_path.name)}
-        for k in version_numbers(s.work)], page)
+        for k in version_numbers(s.work)],
+        subtitle=destination(recipe), steps=_page_steps(tiny, singles), edit_map=edit_map,
+        board=s.work / "board.jpg", still_open=still_open, full_quality=full_quality)
 
     return {
         "version": tag,
         "preview": str(out),
+        "full_quality": full_quality,
+        "size": [after.shape[1], after.shape[0]],
+        "card": str(card),
         "compare": str(compare),
         "diff": str(diff) if diff else None,
         "map": str(edit_map),

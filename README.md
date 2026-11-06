@@ -46,7 +46,7 @@ Every version is saved, so nothing you liked is ever lost. New boards lean towar
 
 <p align="center"><img src="assets/work.webp" width="880" alt="The three edits that changed the demo photo most, each rendered alone as a before and after, with why it was made, its slider values and its measured impact"></p>
 
-Every round renders each edit on its own, zoomed to where it acts, and ranks them by how much they changed the photo, so an edit that changes nothing gets caught. On the Mac you also get a review page with a before/after slider across every version.
+Every round renders each edit on its own, zoomed to where it acts, and ranks them by how much they changed the photo, so an edit that changes nothing gets caught. Each round comes back as one 4:5 card that reads full width in a phone chat, and as a review page built for the phone first: press and hold for the original, flip between versions, and open the edits underneath. On a wide screen the edits sit beside the photo. The page is a single file that loads nothing from the network.
 
 ## Install
 
@@ -96,7 +96,7 @@ To run setup yourself, or to work on feedready from a clone, see [CONTRIBUTING.m
 <details>
 <summary><b>What you get back</b></summary>
 
-- A quality-100 JPEG at full resolution, next to a `-compare.jpg` before/after. Only the crop changes the size; over 30 MP, Claude asks whether to shrink first.
+- A quality-100 JPEG at full resolution, next to a `-compare.jpg` before/after, plus a 100% crop of the face so you can see nothing was lost. Only the crop changes the size; over 30 MP, Claude asks whether to shrink first. Photos with a long edge of 2048 px or less preview at full size from the first round.
 - Wide-gamut photos (most iPhone shots) stay in Display P3, so saturated colours aren't clipped to sRGB.
 - All metadata is stripped, so your post carries no GPS location.
 
