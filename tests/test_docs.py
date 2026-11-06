@@ -59,7 +59,7 @@ def test_mask_types():
     text = RECIPE.read_text()
     documented = set(re.findall(r'"type": "([a-z]+)"', text))
     geometric = {"radial", "linear", "polygon", "brush", "luminance", "color"}
-    detected = {"person", "subject", "background", "face", "segment", "sky", "object"}
+    detected = {"person", "subject", "background", "face", "skin", "segment", "sky", "object"}
     lib.check("every documented mask type exists in masks.py",
               documented == geometric | detected, f"docs={sorted(documented)}")
     swift_types = {"person", "subject"}

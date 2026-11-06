@@ -40,7 +40,7 @@ Use the `profile.genre` from `inspect`, then trust your eye over it. Offer three
 | genre | clean | second | third | region moves that make it work |
 |---|---|---|---|---|
 | portrait / selfie | natural + fixes | warm-golden 60–80 (warm, soft) | moody 70–90 with a dark background (studio) or mono (editorial) | dim the background (person inverted), lift the face +0.2–0.4, eyes +0.2–0.3, heal distractions near the head |
-| group | natural + fixes | bright-airy | warm-golden | even out faces (each face a radial), dim the brightest background patch |
+| group | natural + fixes | bright-airy | warm-golden | even out faces (`face` with `index: "all"`, or one step per face), keep bystanders out with `person` and `faces`, dim the brightest background patch |
 | person in scene | natural + fixes | cinematic (travel) | film (lifestyle) | lift the person a little, keep the scene; don't let the grade swallow them |
 | landscape | natural + fixes | punchy (crisp, deep sky) | moody or warm-golden depending on the light | sky highlights down, dehaze and clarity on the scenery only, a linear gradient on a bright sky |
 | city / night | natural + fixes | cinematic | mono or moody | keep lights from clipping, lift shadows gently and watch the noise |
@@ -84,12 +84,13 @@ Change only what the note is about; everything else stays as it was. One notch i
 | film / vintage / faded | add a `film` look at 60%, or lift the curve's black point to 0.06 |
 | cinematic | `cinematic` look; vignette -15 |
 | black and white | `mono` look; keep the region moves |
-| skin looks orange / red | hsl orange sat -15 and red sat -10; ease temp on the face |
-| skin looks grey / sickly | hsl orange sat +8 and lum +5; temp +5 on the face |
+| skin looks orange / red | through a `skin` mask: hsl orange sat -15 and red sat -10, temp -6 |
+| skin looks grey / sickly | through a `skin` mask: hsl orange sat +8 and lum +5, temp +5 |
+| fairer / brighter skin / less yellow | through a `skin` mask: exposure +0.15, temp -6, saturation -6. It's still their skin: stop before critique's skin hue leaves 10–35° |
 | face too bright / too dark | face step exposure ∓0.15 |
 | I don't stand out / make me pop | background exposure -0.2 more, face +0.1, a vignette |
 | background is distracting | dim it more, desaturate it (saturation -20 on the background), or heal the object |
-| remove X | heal through an `object` mask on X with grow 0.004 |
+| remove X | heal through an `object` box on each X with grow 0.004; `brush` or `polygon` only for thin rails the object mask misses |
 | sharper / crisper | texture +10 and sharpen +20 on the subject, never on skin |
 | crop tighter / looser | crop `scale` ±0.1; keep the face on the upper third |
 | back to v2 | start from `v2` exactly |

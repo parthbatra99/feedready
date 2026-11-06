@@ -29,6 +29,7 @@ from detect import (
     edgetam_available,
     engine_available,
     engine_stale,
+    main_faces,
     run_engine,
     segformer_available,
     vision_backend,
@@ -42,7 +43,7 @@ USAGE = """feedready: render Claude's photo-edit recipes, version by version, an
   feedready.py bootstrap FEATURE... [--from DIR] install packages + models for people, segment, object, heal,
                                                  heic, opencv or all (--from: verify files already uploaded)
   feedready.py inspect IMG [--fetch]             grid overlay + stats + profile + findings (JSON); --fetch first
-                                                 downloads the models this photo needs (scene; people if present)
+                                                 downloads the scene model, and the people models off the Mac
   feedready.py masks RECIPE IMG                  contact sheet of every step's mask
   feedready.py board IMG RECIPE [RECIPE ...]     original + each recipe side by side (directions, versions)
   feedready.py preview RECIPE IMG [--note TEXT]  screen-size render saved as the next version, with critique
@@ -61,9 +62,10 @@ SINGLE_EDGE = 900
 BOARD_EDGE = 900
 SIMILAR = 0.025
 FETCH_CAP_MB = 100
-PERSON_SHARE = 0.002
+EMPTY_MASK = 0.5
 INSPECT_GAINS = {
-    "people": "face, subject-balance and crop checks that know where people are; person, subject, background and face masks",
+    "people": "face, subject-balance and crop checks that know where people are; person, subject, background, face and skin masks",
+    "object": "object masks for anything you box or click, and removal that follows its outline",
     "segment": "haze and sky checks and the scene read behind the genre; sky and scenery masks that follow the horizon",
     "opencv": "the distraction check and sharper mask edges",
 }
@@ -200,7 +202,7 @@ def capabilities() -> dict:
         "object": edgetam_available(),
         "heal": develop.heal_backend() or False,
         "heic": engine_available() or bootstrap.has_module("pillow_heif"),
-        "opencv": bootstrap.has_module("cv2.ximgproc"),
+        "opencv": bootstrap.has_module(bootstrap.manifest()["packages"]["opencv-contrib-python-headless"]["module"]),
     }
 
 
@@ -239,7 +241,7 @@ def cmd_bootstrap(args) -> dict:
     if source is not None and not source.is_dir():
         return {"error": f"{source} is not a folder"}
     out = bootstrap.bootstrap(args.features, source)
-    if "error" not in out:
+    if "error" not in out and "restart" not in out:
         out["capabilities"] = capabilities()
     return out
 
@@ -262,18 +264,12 @@ def _fetch(feature: str, why: str) -> dict | None:
     return entry
 
 
-def _person_in_frame(scene: Scene) -> bool:
-    probs, labels = scene.segmentation()
-    idx = [i for i, label in enumerate(labels) if label.split(",")[0].strip() == "person"]
-    return bool(idx) and float((probs.argmax(0) == idx[0]).mean()) >= PERSON_SHARE
-
-
 def fetch_for(scene: Scene) -> list[dict]:
     fetched = []
     if done := _fetch("segment", "sky and scenery masks that follow the horizon, and the scene read behind the genre"):
         fetched.append(done)
-    if not engine_available() and segformer_available() and _person_in_frame(scene):
-        if done := _fetch("people", "there's a person in the frame: person, subject and face masks"):
+    if not engine_available():
+        if done := _fetch("people", "subject, person, face and skin masks, and object masks for anything you point at"):
             fetched.append(done)
     importlib.invalidate_caches()
     return fetched
@@ -311,8 +307,8 @@ def cmd_inspect(args) -> dict:
         out["diagnostics"]["skipped"] += opp["skipped"]
     out["recrops"] = recrops.mine(scene)
     caps = capabilities()
-    if not getattr(args, "fetch", False) and (unlock := [{"feature": f, "command": bootstrap_hint(f), "adds": gain}
-                                                         for f, gain in INSPECT_GAINS.items() if not caps[f]]):
+    if unlock := [{"feature": f, "command": bootstrap_hint(f), "adds": gain}
+                  for f, gain in INSPECT_GAINS.items() if not caps[f]]:
         out["unlock"] = unlock
     if numbers := version_numbers(work):
         index = version_index(work)
@@ -323,7 +319,32 @@ def cmd_inspect(args) -> dict:
     review.grid_image(img, faces, grid, icc)
     out["grid"] = str(grid)
     out["original"] = str(working)
-    return out
+    return {"summary": summary(out, faces, caps), **out}
+
+
+def summary(out: dict, faces: list[dict], caps: dict) -> dict:
+    main = set(main_faces(faces))
+    available = ["radial", "linear", "brush", "polygon", "luminance", "color"]
+    if caps["people"]:
+        available += ["person", "subject", "background", "face", "skin"]
+    if caps["segment"]:
+        available += ["segment", "sky"]
+    if caps["object"]:
+        available.append("object")
+    return {
+        "tier": out["tier"],
+        "fetched": [f"{f['feature']} ({f['mb']} MB){'' if f.get('ok') else ' FAILED: ' + str(f.get('error'))}"
+                    for f in out.get("fetched", [])],
+        "faces": [{"index": i, "box": f["box"], "main": i in main} for i, f in enumerate(faces)],
+        "masks": available,
+        "missing": [f"{u['feature']}: {u['command']}" for u in out.get("unlock", [])],
+        "genre": out["profile"].get("genre"),
+        "hero": out["profile"].get("hero"),
+        "findings": [f["finding"] for f in out["diagnostics"]["findings"]],
+        "opportunities": [o["finding"] for o in out["opportunities"]],
+        "recrops": [f"{r['aspect']}: {r['why']}" for r in out["recrops"]],
+        "files": {"original": out["original"], "grid": out["grid"]},
+    }
 
 
 def _resolution(img: np.ndarray, src: Path) -> dict:
@@ -338,10 +359,20 @@ def _resolution(img: np.ndarray, src: Path) -> dict:
 def _step_masks(steps: list[dict], scene: Scene) -> list[np.ndarray | None]:
     result = []
     for i, step in enumerate(steps):
+        where = f"step {i + 1} ({step.get('name', '')})"
         try:
-            result.append(maskmod.build(step.get("mask"), scene))
+            m = maskmod.build(step.get("mask"), scene)
         except (MissingCapability, ValueError) as e:
-            raise SystemExit(json.dumps({"error": f"step {i + 1} ({step.get('name', '')}): {e}", "tier": tier()}))
+            raise SystemExit(json.dumps({"error": f"{where}: {e}", "tier": tier()}))
+        for note in maskmod.lint(step.get("mask"), where):
+            if note not in scene.notes:
+                scene.notes.append(note)
+        if m is not None and float(m.max()) < EMPTY_MASK:
+            note = (f"{where}: its mask peaks at {float(m.max()):.2f}, so the step barely lands; "
+                    "check it on the contact sheet")
+            if note not in scene.notes:
+                scene.notes.append(note)
+        result.append(m)
     return result
 
 
@@ -398,7 +429,9 @@ def cmd_apply(args) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     ref = args.recipe.strip()
     suffix = ref.lower() if VERSION.fullmatch(ref) else recipe.get("preset", "edit")
-    out = Path(args.output).expanduser() if args.output else out_dir / f"{s.src.stem}-{suffix}.jpg"
+    out = Path(args.output).expanduser() if args.output else Path(f"{s.src.stem}-{suffix}.jpg")
+    if not out.is_absolute():
+        out = out_dir / out
     crop = render.render(s.img, steps, built, recipe, out, stage=s.work, tag="apply", engine=s.engine, icc=s.icc,
                          source=s.working)
     result = load_rgb(out)

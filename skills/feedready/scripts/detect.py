@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from imaging import guided_filter, load_mask, min_filter, resize
+from imaging import guided_filter, load_mask, min_filter, resize, smoothstep
 
 CACHE = Path.home() / ".cache" / "feedready"
 ENGINE = CACHE / "bin" / "feedready-engine"
@@ -24,6 +24,8 @@ MIGAN = MODELS / "migan_pipeline_v2.onnx"
 YUNET = MODELS / "yunet_2023mar.onnx"
 U2NETP = MODELS / "u2netp.onnx"
 LOW_IOU = 0.7
+EDGE_LO, EDGE_HI = 0.35, 0.65
+MAIN_FACE = 0.5
 
 SEG_ALIASES = {
     "sky": ["sky"],
@@ -62,6 +64,13 @@ def run_engine(*args: str) -> str:
     if res.returncode != 0:
         raise RuntimeError(f"feedready-engine {args[0]} failed: {res.stderr.strip()}")
     return res.stdout
+
+
+def main_faces(faces: list[dict]) -> list[int]:
+    if not faces:
+        return []
+    tallest = max(f["box"][3] - f["box"][1] for f in faces)
+    return [i for i, f in enumerate(faces) if f["box"][3] - f["box"][1] >= MAIN_FACE * tallest]
 
 
 def _face_order(face: dict) -> tuple:
@@ -172,7 +181,7 @@ class Scene:
         logit = resize(np.ascontiguousarray(logits[0, 0, best]), w, h)
         m = 1 / (1 + np.exp(-np.clip(logit, -30, 30)))
         r = max(1, min(max(3, int(max(h, w) * 0.006)), int(_width(m > 0.5) / 3)))
-        m = guided_filter(self.img, m.astype(np.float32), r, 1e-4).clip(0, 1)
+        m = smoothstep(EDGE_LO, EDGE_HI, guided_filter(self.img, m.astype(np.float32), r, 1e-4).clip(0, 1))
         if score < LOW_IOU:
             prompt = f"box {list(box)}" if box is not None else f"points {[list(p) for p in points]}"
             note = f"object mask for {prompt} is low-confidence (iou {score:.2f}): check it on the contact sheet"

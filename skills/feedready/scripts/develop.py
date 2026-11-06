@@ -7,6 +7,7 @@ from imaging import (
     cv2,
     gaussian,
     guided_filter,
+    has_cv2,
     hsv_to_rgb,
     linear_to_srgb,
     luma,
@@ -340,7 +341,7 @@ def dehaze(img: np.ndarray, amount: float) -> np.ndarray:
 def heal_backend() -> str | None:
     if migan_available():
         return "migan"
-    if cv2 is not None and hasattr(cv2, "xphoto"):
+    if cv2 is not None and has_cv2("xphoto.inpaint"):
         return "opencv"
     return None
 

@@ -31,7 +31,11 @@ def manifest() -> dict:
     return json.loads(MANIFEST.read_text())
 
 
-def has_module(name: str) -> bool:
+def has_module(name: str, fresh: bool = False) -> bool:
+    if fresh:
+        head, *rest = name.split(".")
+        probe = f"import {head} as m\nfor a in {rest!r}:\n    m = getattr(m, a)"
+        return subprocess.run([sys.executable, "-c", probe], capture_output=True).returncode == 0
     head, *rest = name.split(".")
     if importlib.util.find_spec(head) is None:
         return False
@@ -57,13 +61,13 @@ def model_bytes(names) -> int:
     return sum(f["bytes"] for n in names for f in m[n]["files"])
 
 
-def missing(feature: str) -> dict:
+def missing(feature: str, fresh: bool = False) -> dict:
     spec = manifest()["features"][feature]
     packages = manifest()["packages"]
     models = [n for n in spec["models"] if not model_ready(n)]
     return {
         "models": models,
-        "packages": [p for p in spec["packages"] if not has_module(packages[p]["module"])],
+        "packages": [p for p in spec["packages"] if not has_module(packages[p]["module"], fresh)],
         "mb": round(model_bytes(models) / 1e6, 1),
     }
 
@@ -226,7 +230,10 @@ def bootstrap(features, source: Path | None = None) -> dict:
         if source is None:
             out["fallback"] = ("downloads are blocked here: allow the domain in the sandbox's network settings, or "
                                f"attach the files in still_needed to the chat and rerun bootstrap with --from {UPLOADS}")
-    out["ready"] = {f: not any(missing(f)[k] for k in ("models", "packages")) for f in features}
+    fresh = bool(out["packages"]["installed"])
+    out["ready"] = {f: not any(missing(f, fresh)[k] for k in ("models", "packages")) for f in features}
+    if fresh and not all(has_module(manifest()["packages"][n]["module"]) for n in out["packages"]["installed"]):
+        out["restart"] = "installed; this process loaded the old copy, so the next command picks it up"
     return out
 
 
@@ -261,7 +268,7 @@ def probe() -> dict:
         "pip": pip.stdout.split(" from ")[0] if pip.returncode == 0 else None,
         "curl": shutil.which("curl") is not None,
         "modules": {m: has_module(m) for m in
-                    ("numpy", "PIL", "cv2", "cv2.ximgproc", "cv2.xphoto", "onnxruntime", "pillow_heif")},
+                    ("numpy", "PIL", "cv2", "cv2.ximgproc.guidedFilter", "cv2.xphoto.inpaint", "onnxruntime", "pillow_heif")},
         "network": {name: _reachable(url) for name, url in PROBE_URLS.items()},
         "proxy": any(os.environ.get(k) for k in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY")),
         "home": str(home),

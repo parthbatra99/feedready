@@ -8,6 +8,9 @@ Repo is a Claude Code plugin (`feedready`) that is also its own plugin marketpla
 # Test — the only verification step; no CI, lint, or typecheck exists
 ~/.cache/feedready/venv/bin/python tests/selftest.py   # must end with "ALL PASSED"; --suite NAME, --regen (rebaseline goldens/fingerprints), --fetch-corpus (downloads the labeled corpus)
 
+# Session evals: real claude.ai failure moments, graded on Claude's reply (costs API credit; see CONTRIBUTING.md)
+claude plugin eval . --runs 3 -j 4 --ablation none --no-publish
+
 # Engine CLI (prints JSON); run from skills/feedready/
 ./run.sh doctor | inspect <photo> | masks <recipe> <photo> | board <photo> <recipe>... | preview <recipe> <photo> --note "..." | apply <recipe|vN> <photo>
 

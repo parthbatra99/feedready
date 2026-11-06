@@ -90,7 +90,7 @@ All paths are under `skills/feedready/`:
 | `scripts/diagnose.py` | the photo `profile` and the checks behind every finding (exposure, subject vs background, face vs background, face, skin-aware colour cast, haze, sky, bright distractions, headroom and crop). Add a check as one function in `CHECKS`. |
 | `scripts/masks.py` | mask specs to masks, from simple shapes to EdgeTAM objects, plus combinators and edge refinement |
 | `scripts/detect.py` | model access, per-photo caching, and which vision backend runs (Apple or portable). Every model path lives here. |
-| `scripts/portable.py` | the portable stand-in for Vision: YuNet faces and pupils, U²-Net-p saliency, and SegFormer/U²-Net-p regions refined by EdgeTAM into `person.png` and `subject.png`. It writes the same `vision.json` the engine does, so nothing downstream knows which ran. |
+| `scripts/portable.py` | the portable stand-in for Vision: YuNet faces and pupils, U²-Net-p saliency, and SegFormer/U²-Net-p regions refined by EdgeTAM into `person.png` and `subject.png`. EdgeTAM sets the edges (sharpened, so a background move doesn't halo) and the coarse prior only fills the interior; when SegFormer sees no person but YuNet sees a face, EdgeTAM is prompted from the face. It writes the same `vision.json` the engine does, so nothing downstream knows which ran. |
 | `scripts/bootstrap.py` + `models.json` | the one list of models (URL pinned to a revision, size, sha256, licence) and which feature needs which. `setup.sh`, `doctor`, `bootstrap` and `probe` all read it. Each file downloads from its `url`, then from each base in `mirrors` + its asset name (path with `/` as `-`), until one matches the hash. `scripts/bootstrap.py assets DIR` stages every installed model under those asset names, ready to upload as a release. To add a model, add it there and note its licence in the README. |
 | `scripts/develop.py` | sliders and looks to engine ops, and the prepass: dehaze, clarity and texture via a guided filter, heal via MI-GAN |
 | `swift/feedready_engine.swift` | decode, Vision masks and the Core Image render |
@@ -125,11 +125,11 @@ Run it from the repo root; it must end with `ALL PASSED`. The suites run in orde
 
 | Suite | Covers |
 |---|---|
-| `units` | exact values for the looks/slider/preset tables, colour math, tone curves, white balance, hsl, crop geometry, mask geometry, imaging roundtrips and cv2-vs-fallback branch parity |
+| `units` | exact values for the looks/slider/preset tables, colour math, tone curves, white balance, hsl, crop geometry, mask geometry (including face `index: "all"`, main faces and modifier lint), imaging roundtrips and cv2-vs-fallback branch parity |
 | `docs` | `reference/recipe.md`, `reference/vibes.md` and `SKILL.md` stay in sync with the code, and the Swift engine handles every op `build_ops` emits |
-| `render` | every slider's direction on both renderers, the CLI loop, diagnostics, object masks, heal, `doctor`/`masks`, and the error paths |
+| `render` | every slider's direction on both renderers, the CLI loop, diagnostics, object masks, heal, `doctor`/`masks`, the error paths, and the phone path: a half-installed OpenCV (contrib namespace without `guidedFilter`, as claude.ai ships it), people models fetched for photos with nobody in them, `unlock` kept when a fetch fails, the `summary` block, relative `apply -o`, and mask notes |
 | `engine` | Core Image vs numpy parity per op, engine determinism, and the render-plan schema |
-| `portable` | the portable vision backend against Apple Vision on the corpus: face boxes, pupils, person and subject masks, and the `vision.json` schema |
+| `portable` | the portable vision backend against Apple Vision on the corpus: face boxes, pupils, person and subject masks, no missed person when a face is visible, halo from a −0.4 EV background move through each mask (median ≤ 0.10 stops at its own edge and at Vision's), `person` with `faces`, `skin` coverage and smoothness, and the `vision.json` schema |
 | `golden` | pixel goldens for the numpy tier on synthetic fixtures, stored in `tests/golden/` |
 | `corpus` | every corpus photo survives a numpy-tier render |
 | `suggest` | the diagnosis pipeline on the labeled corpus (`tests/labels.json`): required and forbidden findings, step directions, genres, face counts |
@@ -141,6 +141,16 @@ Rebaseline deliberately. `--regen` after an intentional change to looks, sliders
 
 > [!TIP]
 > Model checks print `skip` when that model isn't installed, so a pass with skips doesn't cover everything. `suggest` needs the Mac tier (Vision + SegFormer); `golden` and `eval` fingerprints assume the cv2 branches.
+
+## Session evals (the behaviour gate)
+
+Selftest checks the CLI; `evals/` checks what Claude does with it. Each case is a moment from a real claude.ai session that went wrong, replayed with the CLI output pasted in, and graded on the reply: reporting the critique honestly instead of claiming a fix, taking faces from `summary.faces` instead of guessing radials, `person` with `faces` instead of a polygon round bystanders, `skin` instead of a colour range, `object` boxes for removal, and saying a failed model download out loud. Run them with [`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals.md):
+
+```bash
+claude plugin eval . --runs 3 -j 4 --ablation none --no-publish
+```
+
+To compare against the last release, check it out in a worktree, copy `evals/` into it, and run the same command there. Results land in `evals/results/` (ignored by git).
 
 ## Wow eval (the taste gate)
 

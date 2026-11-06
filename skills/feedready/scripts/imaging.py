@@ -21,6 +21,15 @@ except ImportError:
     pass
 
 
+def has_cv2(path: str) -> bool:
+    obj = cv2
+    for name in path.split("."):
+        obj = getattr(obj, name, None)
+        if obj is None:
+            return False
+    return obj is not cv2
+
+
 def load_rgb(path) -> np.ndarray:
     if cv2 is not None and str(path).lower().endswith(".png") and _plain_png(path):
         raw = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
@@ -209,7 +218,7 @@ def gaussian(a: np.ndarray, sigma: float) -> np.ndarray:
 
 
 def guided_filter(guide: np.ndarray, src: np.ndarray, r: int, eps: float) -> np.ndarray:
-    if cv2 is not None and hasattr(cv2, "ximgproc"):
+    if has_cv2("ximgproc.guidedFilter"):
         g = guide.astype(np.float32)
         return cv2.ximgproc.guidedFilter(g, src.astype(np.float32), r, eps)
     g = luma(guide) if guide.ndim == 3 else guide

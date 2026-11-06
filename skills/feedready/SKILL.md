@@ -48,7 +48,7 @@ Run `doctor`. `capabilities` says what works right now:
 
 | capability | gives |
 |---|---|
-| `people` | `person`, `subject`, `background` and `face` masks, plus face-aware findings, crops and critique (`apple` on a Mac, `portable` elsewhere) |
+| `people` | `person`, `subject`, `background`, `face` and `skin` masks, plus face-aware findings, crops and critique (`apple` on a Mac, `portable` elsewhere) |
 | `segment` | `segment` and `sky` masks, plus scene-aware findings |
 | `object` | `object` masks |
 | `heal` | the `heal` adjustment |
@@ -59,11 +59,14 @@ Global sliders, looks, crops, and radial, linear, brush, polygon, luminance and 
 
 Downloads don't need a yes. Fetch what the work needs, then say what you fetched in one line of your next message. Ask first only when a single download is over 100 MB.
 - **Engine (Mac):** if `missing` lists the engine, run `<base>/setup.sh` before anything else. It compiles the Swift engine (no download) and installs ~90 MB of Python packages. Say so in a line.
-- **Models:** `inspect --fetch` (step 1) downloads what this photo needs: the scene model always, and the people models off the Mac when someone is in the frame. Anything a later edit needs (`object` masks, `heal`, HEIC) comes from the command in the `MissingCapability` error. Run it, mention it in a line, and carry on. Each claude.ai conversation starts clean, so this happens once per conversation.
+- **Models:** `inspect --fetch` (step 1) downloads the scene model and, off the Mac, the people models, which also give `subject` and `object` masks, so they come down for every photo, people in it or not. Anything a later edit needs (`heal`, HEIC) comes from the command in the `MissingCapability` error. Run it, mention it in a line, and carry on. Each claude.ai conversation starts clean, so this happens once per conversation.
+- **`unlock` in `inspect`** means a capability is still missing. Run its command before reaching for drawn shapes; a radial or polygon standing in for a detected mask is the last resort, and you say so when you use one.
 - **If a download fails** (`fetched[].ok` is false, or `bootstrap` reports `fallback`), run `probe` and tell the user what's blocked. Usually it's the sandbox's network setting: they can allow the domain in their settings, or attach the model files named in `still_needed` to the chat and you rerun with `--from` the uploads folder (`/mnt/user-data/uploads` on claude.ai). Hashes are checked, so renamed files are fine. Meanwhile, work with geometric masks and say so. Don't fake it with a poor approximation.
 
 ## 1. Read the photo
-Run `run.sh inspect PHOTO --fetch`, then look at the `original` and `grid` images. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid, never by eye.
+Run `run.sh inspect PHOTO --fetch`, then look at the `original` and `grid` images. The grid has yellow lines every 10% labelled .1–.9, with each detected face boxed in cyan and numbered by its `index`. Read every coordinate you use from this grid, never by eye.
+
+`inspect` prints `summary` first: the faces by index (`main` marks the ones that matter, not background faces), the masks that work right now, and the findings in one line each. Read it whole. Don't pipe `inspect` through your own filter: a hand-picked subset is how face boxes go missing and faces get guessed. The full fields follow `summary` when you need the evidence.
 
 Form a photographer's read:
 - What the photo is about.
@@ -136,9 +139,12 @@ Each round produces one version, `vN`, that the user sees.
    - Fix every `critique` issue with severity `fix`. Weigh each `consider`.
    - If `critique.skipped` lists the face checks, judge the face by eye.
    - Drop or push any step whose `impact` is `none`.
+   - Read `notes`: a mask that came out nearly empty or was bent out of shape by a modifier is listed there. Fix it before judging the render.
    - Run vibes.md's checklist, and ask whether it hits the brief.
 
    Revise and re-render up to 3 times. Mention self-caught fixes only if they matter ("I pulled the background back; it was haloing your hair").
+
+   **Report what the critique says, not what you hoped.** Something is fixed only when the latest critique stops reporting it. A `fix` issue still open after 3 tries goes in your message as the one change you'd still make, with its number ("your face is still 0.4 stops darker than the wall"). Never write that a halo is gone, a face is the brightest thing, or shadows are eased while the latest critique says otherwise.
 4. **Show.** Show these files:
    - The first round: `compare`, `cards` and `map`.
    - Later rounds: `diff`.
@@ -170,18 +176,21 @@ On the Mac it goes in `~/Pictures/feedready/`; show `output` and `compare`. On c
 Close the way a photographer hands off: 2–4 lines on what you did to get the vibe.
 
 ## Masks
-People, faces, sky and broad scenery have their own types: `person`, `face`, `sky`, `segment`. For anything else the user names ("the snowy peaks", "the glove logo", "that car"), use `object` with a box read from the grid.
-- A tight box is the most reliable prompt.
-- If the box catches extras, add a positive point inside the target and `exclude` points on the look-alike neighbours.
-- `masks`, `preview` and `apply` list low-confidence object masks in `notes`. Check those on the contact sheet first.
-- To remove a distraction, heal it through an `object` or `brush` mask with a small `grow` (0.004).
-- For the background, use `{"type": "person", "invert": true, "grow": -0.002}`. Never feather it: once the background goes darker, a feathered or exact outline leaves a bright rim around hair and fingers. `critique` reports a halo if one slips through.
+People, faces, skin, sky and broad scenery have their own types: `person`, `face`, `skin`, `sky`, `segment`. For anything else the user names ("the snowy peaks", "the glove logo", "that car"), use `object` with a box read from the grid.
+- **Faces:** `{"type": "face", "index": "all"}` lights every main face in one step; `"index": 1` picks one. Without `index` you get face 0 only, and `notes` says so when other main faces were left out. Take the indices from `summary.faces` or the grid, never from a guessed radial.
+- **Only some people:** `{"type": "person", "faces": [0, 1]}` keeps the people whose faces those are and leaves bystanders, waiters and diners out. Use it instead of cutting the `person` mask with a polygon.
+- **Skin:** `{"type": "skin"}` (or with `"faces": [0]`) for notes about skin tone, "fairer", "less yellow", "orange skin". It reads the skin tone from the detected faces and stays smooth, unlike a `color` range, which goes patchy on skin.
+- A tight box is the most reliable `object` prompt. If it catches extras, add a positive point inside the target and `exclude` points on the look-alike neighbours.
+- `masks`, `preview` and `apply` list low-confidence object masks, nearly empty masks and out-of-range modifiers in `notes`. Check those on the contact sheet first.
+- **Removal:** heal each thing through its own `object` box with a small `grow` (0.004). Fall back to `brush` or `polygon` only for thin rails and wires the object mask misses, and check them on the contact sheet.
+- For the background, use `{"type": "person", "invert": true, "grow": -0.004}`. Never feather it: once the background goes darker, a feathered or exact outline leaves a bright rim around hair and fingers. `critique` reports a halo if one slips through; the fix is a stronger negative `grow` (-0.006 to -0.01) or a gentler background move, not a feather.
+- Modifiers are fractions of the short side: `grow` and `feather` around 0.002–0.02. `feather: 0.5` blurs a mask across half the photo until it does nothing.
 
 Fix any mask that spills or misses, at most 2 rounds per mask. Common fixes:
 - Subtract `person` from scenery masks, and `sky` from mountain masks.
 - Intersect with a `linear` band to limit the vertical extent, or with `luminance` to hit only bright or dark parts.
 - Intersect or subtract an `object` mask when a detected region is wrong.
-- Use an explicit `radial` from the grid when the detected face points miss. Covered or profile faces often fool it.
+- Use an explicit `radial` from the grid only when the detected face points miss (covered or profile faces, `face_readable: false`), and say so.
 
 ## Notes
 - Prefer subtle: these are Lightroom-scale sliders, and ±20–40 is usually plenty. Dehaze and clarity on a smooth sky bring out streaks, so mask them to the scenery.

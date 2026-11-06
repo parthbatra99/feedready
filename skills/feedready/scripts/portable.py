@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from detect import U2NETP, YUNET, Scene
-from imaging import guided_filter, resize, save_mask
+from detect import EDGE_HI, EDGE_LO, U2NETP, YUNET, Scene
+from imaging import guided_filter, min_filter, resize, save_mask, smoothstep
 
 FACE_INPUT = 640
 FACE_SCORE = 0.75
@@ -17,6 +17,7 @@ SALIENT_INPUT = 320
 SALIENT_THRESHOLD = 0.5
 MIN_SHARE = 0.005
 MAX_PROMPTS = 6
+PRIOR_INSET = 0.02
 
 
 def vision(scene: Scene, out: Path) -> None:
@@ -24,7 +25,7 @@ def vision(scene: Scene, out: Path) -> None:
     sal = saliency(scene.img)
     regions = components(sal > SALIENT_THRESHOLD)
     info["salient_boxes"] = [r["box"] for r in regions[:1]]
-    person = person_mask(scene)
+    person = person_mask(scene, info["faces"])
     if person is not None:
         save_mask(person, out / "person.png")
         info["person"] = True
@@ -147,23 +148,44 @@ def _pad(box: list[float], frac: float = 0.02) -> list[float]:
 def _prompted(scene: Scene, regions: list[dict], prior: np.ndarray) -> np.ndarray:
     H, W = scene.img.shape[:2]
     notes = list(scene.notes)
-    out = guided_filter(scene.img, resize(prior, W, H), max(3, int(max(H, W) * 0.006)), 1e-4).clip(0, 1)
+    coarse = guided_filter(scene.img, resize(prior, W, H), max(3, int(max(H, W) * 0.006)), 1e-4).clip(0, 1)
+    out = min_filter(smoothstep(EDGE_LO, EDGE_HI, coarse).astype(np.float32), max(1, int(PRIOR_INSET * min(H, W))))
     for r in regions[:MAX_PROMPTS]:
         out = np.maximum(out, scene.object_mask(box=_pad(r["box"]))[0])
     scene.notes[:] = notes
     return out.astype(np.float32)
 
 
-def person_mask(scene: Scene) -> np.ndarray | None:
+def person_mask(scene: Scene, faces: list[dict] = ()) -> np.ndarray | None:
     probs, labels = scene.segmentation()
     idx = [i for i, label in enumerate(labels) if label.split(",")[0].strip() == "person"]
-    if not idx:
+    prior = probs[idx].sum(0).clip(0, 1) if idx else None
+    regions = components(prior > 0.5) if prior is not None else []
+    if regions:
+        return _prompted(scene, regions, prior)
+    return _from_faces(scene, faces)
+
+
+def body_box(face: list[float]) -> list[float]:
+    x0, y0, x1, y1 = face
+    bw, bh = x1 - x0, y1 - y0
+    return [max(0.0, x0 - 1.2 * bw), max(0.0, y0 - 0.4 * bh), min(1.0, x1 + 1.2 * bw), min(1.0, y1 + 7 * bh)]
+
+
+def _from_faces(scene: Scene, faces: list[dict]) -> np.ndarray | None:
+    if not faces:
         return None
-    prior = probs[idx].sum(0).clip(0, 1)
-    regions = components(prior > 0.5)
-    if not regions:
-        return None
-    return _prompted(scene, regions, prior)
+    tallest = max(f["box"][3] - f["box"][1] for f in faces)
+    notes = list(scene.notes)
+    out = None
+    for f in faces:
+        if f["box"][3] - f["box"][1] < 0.5 * tallest:
+            continue
+        x0, y0, x1, y1 = f["box"]
+        m = scene.object_mask(box=body_box(f["box"]), points=[[(x0 + x1) / 2, (y0 + y1) / 2]])[0]
+        out = m if out is None else np.maximum(out, m)
+    scene.notes[:] = notes
+    return out
 
 
 def subject_mask(scene: Scene, sal: np.ndarray, regions: list[dict]) -> np.ndarray | None:

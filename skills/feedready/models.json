@@ -64,6 +64,6 @@
   "packages": {
     "onnxruntime": {"module": "onnxruntime", "spec": "onnxruntime>=1.20"},
     "pillow-heif": {"module": "pillow_heif", "spec": "pillow-heif>=1.0"},
-    "opencv-contrib-python-headless": {"module": "cv2.ximgproc", "spec": "opencv-contrib-python-headless>=4.10"}
+    "opencv-contrib-python-headless": {"module": "cv2.ximgproc.guidedFilter", "spec": "opencv-contrib-python-headless>=4.10"}
   }
 }

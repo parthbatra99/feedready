@@ -77,11 +77,15 @@ Computed on the original photo.
 
 ### Detected
 
-These need a capability from `doctor`: `people` for person, subject, background and face; `segment` for segment and sky; `object` for object. On a Mac they come from Vision and `setup.sh`; elsewhere from `bootstrap`.
+These need a capability from `doctor`: `people` for person, subject, background, face and skin; `segment` for segment and sky; `object` for object, and for person and skin with `faces`. On a Mac they come from Vision and `setup.sh`; elsewhere from `bootstrap`.
+
+Face indices come from `inspect`'s `summary.faces` and the numbers on the grid. `main` faces are those at least half the height of the largest, so a background face never counts as one.
 
 - `{"type": "person"}`: everyone in the photo (Vision person segmentation, or SegFormer people refined by EdgeTAM).
+- `{"type": "person", "faces": [0, 2]}`: only the people whose faces those are. Each person is the part of the person mask joined to their face, or, when people overlap, EdgeTAM prompted from the face. Use it to leave bystanders, waiters and other diners out instead of cutting `person` with a polygon.
 - `{"type": "subject"}`: the main subject(s), which can be any object (Vision subject lift, or U²-Net-p saliency refined by EdgeTAM). `{"type": "background"}` is the inverse.
-- `{"type": "face", "part": "face" | "eyes", "index": 0, "scale": 1.0}`: built from detected face points (Vision, or YuNet). Check it on the contact sheet, because covered or profile faces mislead it.
+- `{"type": "face", "part": "face" | "eyes", "index": 0, "scale": 1.0}`: built from detected face points (Vision, or YuNet). `"index": "all"` covers every main face in one step; without `index` it is face 0 only, and `notes` says when other main faces were left out. Check it on the contact sheet, because covered or profile faces mislead it.
+- `{"type": "skin", "faces": [0]}`: the skin of the main people (or only those in `faces`): face, neck, arms and hands. The tone is read from the detected faces and the mask is edge-smoothed, so it doesn't go patchy the way a `color` range does on skin. Use it for skin-tone notes ("less yellow", "orange skin", "brighter skin").
 - `{"type": "segment", "class": "mountain"}`, or a list of classes: SegFormer ADE20K. Friendly names: sky, mountain(s), tree(s), vegetation, water, ground, building, rock. Any ADE20K label also works (e.g. grass, sea, sand, road, field, hill). Edges are snapped to the photo; set `"edge_refine": false` to skip that.
 - `{"type": "sky"}`: SegFormer sky, the same as `{"type": "segment", "class": "sky"}`.
 - `{"type": "object", "box": [x0, y0, x1, y1], "points": [[x, y], …], "exclude": [[x, y], …]}`: the object the prompt points at (EdgeTAM), for anything without a dedicated type. Give a `box`, at least one `points` click, or both. `exclude` clicks push look-alike neighbours out. A tight box from the grid works best. `notes` in the `masks` and `apply` output flags a low-confidence result.
@@ -98,6 +102,7 @@ These work on any mask.
 - `"grow": ±0.01`: dilate or erode by that fraction of the short side.
 - `"refine": "edges"` (guided snap to edges) or `"grabcut"` (turns a rough polygon or brush into a clean object outline; needs `opencv`).
 - `"feather": 0.01`: extra blur.
+- `grow`, `feather` and `soft` are fractions of the short side; useful values sit around 0.002–0.03. Past 0.05 the mask smears across the photo, and `notes` flags it. `notes` also flags any step whose mask peaks under 0.5, because that step barely lands.
 - `"strength": 0.5`: scales how strongly the step applies through this mask.
 
 ## Worked example: a direction refined by notes

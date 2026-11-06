@@ -111,12 +111,12 @@ The same plugin runs in the Claude apps. There, it renders with numpy instead of
 | Crops, Lightroom-style sliders, looks | ✅ | ✅ |
 | Light and colour reads, recrop suggestions | ✅ | ✅ |
 | Shape, brightness and colour masks | ✅ | ✅ |
-| Person, face and subject masks | ✅ Vision | ✅ first use downloads ~50 MB |
+| Person, face, skin and subject masks | ✅ Vision | ✅ first use downloads ~50 MB |
 | Sky and scenery masks | ✅ | ✅ first use downloads 4.4 MB |
-| Masks for any object | ✅ | ✅ first use downloads 41 MB |
+| Masks for any object | ✅ | ✅ comes with the people models |
 | Object removal | ✅ | ✅ first use downloads 28 MB |
 
-The portable masks track Vision closely but not exactly: across the test corpus the median overlap is 0.83 for people and 0.88 for subjects. Each chat starts with a clean sandbox, so downloads repeat per chat.
+The portable masks track Vision closely but not exactly: across the test corpus the median overlap is 0.84 for people and 0.84 for subjects, and darkening the background through them leaves a rim about 0.08 stops bright at the edge, against 0.05 for Vision. The scene and people models download for every photo, people in it or not, because they also give subject and object masks. Each chat starts with a clean sandbox, so downloads repeat per chat.
 
 ## Your photos stay yours
 

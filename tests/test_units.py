@@ -14,7 +14,8 @@ import imaging
 import masks
 import recrops
 import review
-from detect import Scene
+import detect
+from detect import MissingCapability, Scene
 from imaging import (
     box_blur,
     gaussian,
@@ -352,6 +353,34 @@ def test_mask_geometry():
     faces_scene._vision = {"faces": [{"box": [0.4, 0.3, 0.6, 0.5]}]}
     m = masks.build({"type": "face"}, faces_scene)
     lib.check("face mask centres on the face box", m[160, 300] > 0.9 and m[40, 300] < 0.05)
+    group = Scene(None, None, img)
+    group._vision = {"faces": [{"box": [0.1, 0.3, 0.3, 0.5]}, {"box": [0.6, 0.3, 0.75, 0.48]},
+                               {"box": [0.9, 0.05, 0.93, 0.09]}]}
+    lib.check("main faces skip a small background face", detect.main_faces(group.faces()) == [0, 1],
+              str(detect.main_faces(group.faces())))
+    every = masks.build({"type": "face", "index": "all"}, group)
+    lib.check("face index all lights every main face and no background face",
+              every[160, 120] > 0.9 and every[156, 405] > 0.9 and every[28, 549] < 0.05)
+    one = masks.build({"type": "face"}, group)
+    lib.check("face without an index lights face 0 and says the others were left out",
+              one[160, 120] > 0.9 and one[156, 405] < 0.05 and any("index" in n for n in group.notes), str(group.notes))
+    try:
+        masks.build({"type": "face", "index": 7}, group)
+        lib.check("an out-of-range face index is rejected with the valid range", False)
+    except ValueError as e:
+        lib.check("an out-of-range face index is rejected with the valid range", "0–2" in str(e), str(e))
+    faceless = Scene(None, None, img)
+    faceless._vision = {"faces": []}
+    try:
+        masks.build({"type": "face", "index": "all"}, faceless)
+        lib.check("face index all with no faces refuses instead of an empty mask", False)
+    except MissingCapability as e:
+        lib.check("face index all with no faces refuses instead of an empty mask", "no face" in str(e))
+    lint = masks.lint({"op": "union", "masks": [{"type": "radial", "center": [0.5, 0.5], "feather": 0.5},
+                                                {"type": "polygon", "points": [], "soft": 0.004, "grow": -0.002}]},
+                      "step 1 (x)")
+    lib.check("mask lint flags a feather that smears the mask, inside combinators too",
+              len(lint) == 1 and "feather 0.5" in lint[0] and lint[0].startswith("step 1 (x)"), str(lint))
 
 
 def test_critique_units():

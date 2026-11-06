@@ -327,6 +327,85 @@ def doctor_and_masks(tmp, src):
                   feedready.cmd_masks(args) == {"error": "recipe has no steps"})
 
 
+def phone_path(src):
+    import types
+
+    import develop
+    import feedready
+    import imaging
+
+    real = imaging.cv2
+
+    class HalfInstalled:
+        def __getattr__(self, name):
+            return types.SimpleNamespace() if name in ("ximgproc", "xphoto") else getattr(real, name)
+
+    if real is None:
+        lib.skip("half-installed opencv falls back", "needs opencv to imitate a broken contrib install")
+    else:
+        stub = HalfInstalled()
+        saved = imaging.cv2, develop.cv2
+        imaging.cv2 = develop.cv2 = stub
+        try:
+            g = np.linspace(0, 1, 64 * 64 * 3, dtype=np.float32).reshape(64, 64, 3)
+            out = imaging.guided_filter(g, g[..., 0], 3, 1e-3)
+            lib.check("a half-installed opencv (contrib namespace, no guidedFilter) falls back instead of crashing",
+                      out.shape == (64, 64) and np.isfinite(out).all())
+            lib.check("heal doesn't claim opencv when xphoto has no inpaint", develop.heal_backend() != "opencv",
+                      str(develop.heal_backend()))
+        finally:
+            imaging.cv2, develop.cv2 = saved
+    lib.check("a fresh-process module check sees what a new process would",
+              bootstrap.has_module("json.dumps", fresh=True) and not bootstrap.has_module("json.nope", fresh=True))
+    module = bootstrap.manifest()["packages"]["opencv-contrib-python-headless"]["module"]
+    lib.check("the opencv capability checks the function, not the namespace", module == "cv2.ximgproc.guidedFilter",
+              module)
+
+    saved_missing, saved_bootstrap = bootstrap.missing, bootstrap.bootstrap
+    calls = []
+    bootstrap.missing = lambda feature: {"models": ["yunet"], "packages": [], "mb": 5.0}
+    bootstrap.bootstrap = lambda features, source=None: calls.append(list(features)) or {
+        "ready": {f: False for f in features}, "models": {"error": "offline"}, "packages": {}}
+    try:
+        with lib.portable_tier(), lib.isolated_work():
+            work, working, img = feedready.prepare(src)
+            fetched = feedready.fetch_for(Scene(work, working, img))
+        lib.check("off the Mac, inspect --fetch asks for the people models on a photo with nobody in it",
+                  ["people"] in calls and ["segment"] in calls, str(calls))
+        lib.check("a failed fetch is reported, not hidden", all(f["ok"] is False and f["error"] for f in fetched),
+                  str(fetched))
+        with lib.basic_tier(), lib.no_models(), lib.isolated_work(), lib.portable_tier():
+            out = feedready.cmd_inspect(type("Args", (), {"image": str(src), "fetch": True})())
+    finally:
+        bootstrap.missing, bootstrap.bootstrap = saved_missing, saved_bootstrap
+    lib.check("inspect --fetch still lists what is missing when a fetch fails",
+              {"people", "segment", "object"} <= {u["feature"] for u in out.get("unlock", [])},
+              str(out.get("unlock")))
+    lib.check("inspect leads with the summary, including faces, masks and what's missing",
+              next(iter(out)) == "summary" and {"faces", "masks", "missing", "findings"} <= set(out["summary"])
+              and out["summary"]["missing"] and "person" not in out["summary"]["masks"], str(out["summary"]))
+
+    name = f"selftest-relative-{lib.tmp().name}.jpg"
+    with lib.basic_tier(), lib.isolated_work():
+        args = type("Args", (), {"recipe": json.dumps({"steps": [{"adjust": {"exposure": 0.1}}]}),
+                                 "image": str(src), "output": name})()
+        res = feedready.cmd_apply(args)
+    exported = Path(res["output"])
+    lib.check("apply -o with a bare name writes to the output folder, not the current directory",
+              exported.parent == feedready.output_dir() and exported.exists() and not Path(name).exists(),
+              str(exported))
+    exported.unlink(missing_ok=True)
+    exported.with_name(exported.stem + "-compare.jpg").unlink(missing_ok=True)
+
+    recipe = json.dumps({"steps": [{"name": "smeared", "mask": {"type": "radial", "center": [0.5, 0.5], "radius": 0.05,
+                                                                 "feather": 0.5}, "adjust": {"exposure": 0.3}}]})
+    with lib.basic_tier(), lib.isolated_work():
+        out = feedready.cmd_masks(type("Args", (), {"recipe": recipe, "image": str(src)})())
+    lib.check("masks notes a feather that smears the mask and a mask that barely lands",
+              any("feather 0.5" in n for n in out["notes"]) and any("peaks at" in n for n in out["notes"]),
+              str(out["notes"]))
+
+
 def next_version(src):
     import feedready
 
@@ -394,3 +473,5 @@ def run():
     print("  (cli surface)")
     doctor_and_masks(tmp, src)
     error_paths(src)
+    print("  (phone path)")
+    phone_path(src)

@@ -41,7 +41,8 @@ def grid_image(img: np.ndarray, faces: list[dict], path: Path, icc: bytes | None
     im = thumb(img, 1400).convert("RGB")
     W, H = im.size
     draw = ImageDraw.Draw(im, "RGBA")
-    f = font(max(12, W // 60))
+    size = max(12, W // 60)
+    f = font(size)
     for i in range(1, 10):
         x, y = W * i / 10, H * i / 10
         width = 2 if i == 5 else 1
@@ -49,9 +50,11 @@ def grid_image(img: np.ndarray, faces: list[dict], path: Path, icc: bytes | None
         draw.line([(0, y), (W, y)], fill=(255, 255, 0, 150), width=width)
         draw.text((x + 3, 3), f".{i}", fill=(255, 255, 0, 255), font=f, stroke_width=2, stroke_fill=(0, 0, 0, 255))
         draw.text((3, y + 2), f".{i}", fill=(255, 255, 0, 255), font=f, stroke_width=2, stroke_fill=(0, 0, 0, 255))
-    for face in faces:
+    for i, face in enumerate(faces):
         x0, y0, x1, y1 = face["box"]
         draw.rectangle([x0 * W, y0 * H, x1 * W, y1 * H], outline=(0, 255, 255, 255), width=2)
+        draw.text((x0 * W + 2, max(0, y0 * H - size - 4)), str(i), fill=(0, 255, 255, 255), font=f,
+                  stroke_width=2, stroke_fill=(0, 0, 0, 255))
     im.save(path, quality=90, icc_profile=icc)
 
 
