@@ -39,6 +39,7 @@ skills/feedready/setup.sh --segformer --models
 - `scripts/critique.py` — measured self-review of a rendered version (impact per step, halo, skin, clipping, face vs background, HDR, noise) and board similarity. `scripts/review.py` draws every image a person looks at, plus the HTML review page.
 - `scripts/diagnose.py` — every suggestion is one function in the `CHECKS` list (line ~241); add checks there.
 - `scripts/detect.py` — owns **all** model and engine paths (`~/.cache/feedready/...`); other modules import from it.
+- `scripts/sets.py` — several photos (up to 12): `carry` moves the hero's look to another photo and `sheet` checks the set; past 12, point people to Claude Cowork.
 - `scripts/masks.py` (mask specs → masks), `scripts/develop.py` (Lightroom sliders → engine ops + prepass), `scripts/imaging.py` (numpy primitives).
 - `swift/feedready_engine.swift` — Core Image/Vision renderer. Without it (or off macOS), everything falls back to numpy: that's the "basic"/phone tier.
 - `skills/feedready/SKILL.md` is the runtime instructions for Claude (the hired-photographer loop: brief → directions board → preview rounds with self-review → notes → export); `reference/recipe.md` is the recipe schema reference; `reference/vibes.md` holds taste: looks, directions per genre, notes → moves, the review checklist. Keep them in sync with script behavior; `develop.LOOKS` and the looks table in vibes.md must match.

@@ -534,6 +534,48 @@ def test_taste():
     lib.check("taste stays empty without history", feedready.taste(lib.tmp() / "nothing") == {})
 
 
+def test_sets():
+    import sets
+
+    recipe = {"preset": "instagram", "crop": {"aspect": "4:5", "focus": [0.4, 0.3]}, "steps": [
+        {"name": "grade", "look": "warm-golden"},
+        {"name": "sky", "mask": {"type": "sky"}, "adjust": {"highlights": -30}},
+        {"name": "eyes", "mask": {"type": "face", "part": "eyes", "index": 0}, "adjust": {"exposure": 0.3}},
+        {"name": "all faces", "mask": {"type": "face", "index": "all"}, "adjust": {"exposure": 0.1}},
+        {"name": "her only", "mask": {"type": "person", "faces": [1]}, "adjust": {"shadows": 10}},
+        {"name": "strip", "mask": {"type": "brush", "dots": [[0.4, 0.8, 0.01]]}, "adjust": {"heal": True}},
+        {"name": "peaks", "mask": {"op": "subtract", "masks": [{"type": "segment", "class": "mountain"},
+                                                               {"type": "person"}]}, "adjust": {"clarity": 20}},
+        {"name": "band", "mask": {"type": "linear", "start": [0.5, 0], "end": [0.5, 0.3]}, "adjust": {"exposure": -0.2}},
+        {"name": "box", "mask": {"op": "intersect", "masks": [{"type": "sky"}, {"type": "object", "box": [0, 0, 1, 1]}]},
+         "adjust": {"exposure": -0.1}}]}
+    carried, dropped, check = sets.split(recipe)
+    lib.check("split keeps detected masks and drops coordinates tied to the hero",
+              [st["name"] for st in carried["steps"]] == ["grade", "sky", "all faces", "peaks", "band"]
+              and dropped == ["eyes", "her only", "strip", "box"] and check == ["band"]
+              and "crop" not in carried and carried["preset"] == "instagram", f"{carried['steps']} {dropped}")
+    fit = {"check": "crop", "crop": {"instagram": {"aspect": "4:5", "focus": [0.6, 0.4], "focus_at": [0.5, 0.36]}}}
+    cut = {"check": "crop", "finding": "a 4:5 crop would cut the subject at the left — ask"}
+    lib.check("carried crops follow the target's own subject",
+              sets.crop_for(recipe, [fit])[0]["focus"] == [0.6, 0.4]
+              and sets.crop_for(recipe, [cut]) == ({"aspect": "4:5"}, cut["finding"])
+              and sets.crop_for({"steps": []}, [fit]) == (None, None))
+    rng = np.random.default_rng(1)
+    grey = (0.35 + 0.1 * rng.random((60, 80, 1))).repeat(3, -1).astype(np.float32)
+    dark_warm = (grey * np.array([1.0, 0.95, 0.8], np.float32)) * 0.6
+    m = sets.match(grey, dark_warm)
+    lib.check("match brightens and cools toward the hero", m["exposure"] > 0.2 and m["temp"] < 0, str(m))
+    lib.check("match leaves a photo that already matches alone", sets.match(grey, grey) == {})
+    sunset = np.zeros((60, 80, 3), np.float32)
+    sunset[...] = [0.9, 0.45, 0.1]
+    lib.check("match won't read a cast from a photo with no greys",
+              "temp" not in sets.match(grey, sunset) and not sets.neutral_found(sunset))
+    flags = sets.consistency([grey, grey, grey * 0.4])
+    lib.check("consistency flags the odd one out", not flags[0]["flags"]
+              and any("darker" in f for f in flags[2]["flags"]), str(flags))
+    lib.check("twelve photos is the cap", sets.too_many(12) is None and "Cowork" in sets.too_many(13))
+
+
 def test_crop_ask():
     wide = np.full((400, 600, 3), 0.3, np.float32)
     work = lib.tmp() / "cropask"
@@ -657,6 +699,7 @@ def test_manifest():
 def run():
     test_manifest()
     test_tables()
+    test_sets()
     test_color_math()
     test_io()
     test_filter_branches()

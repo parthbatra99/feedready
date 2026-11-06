@@ -41,7 +41,9 @@ To show the user an image, use your tool for sending files (SendUserFile in the 
 | `board PHOTO R1 R2 …` | the original plus each recipe side by side, with `too_similar` warnings |
 | `masks RECIPE PHOTO` | contact sheet of every step's mask |
 | `preview RECIPE PHOTO --note "…"` | a screen-size render saved as the next version `vN`, plus visuals and a critique |
-| `apply RECIPE PHOTO` | the full-resolution export |
+| `apply RECIPE PHOTO` | the full-resolution export, with a 100% crop as proof |
+| `carry HERO vN PHOTO` | the hero's look as a recipe for another photo in a set: placed steps and steps with nothing to act on are `dropped`, bands to eyeball are in `check`, the crop follows this photo's subject, and a `match the set` step pulls brightness and white balance toward the hero |
+| `sheet PHOTO…` | the set in carousel order, each photo's latest version, with a flag per photo: not edited yet, a different shape, brighter, darker, warmer or cooler than the rest. 12 photos at most |
 
 A RECIPE is a JSON file, an inline JSON string or a saved version (`v3`). Schema: `reference/recipe.md`. Taste, directions, note vocabulary and the review checklist: `reference/vibes.md`. Read vibes.md before your first board.
 
@@ -69,7 +71,7 @@ Downloads don't need a yes. Fetch what the work needs, then say what you fetched
 Up to 12 photos per chat. For 13 or more, say: "That's more than I can edit well in one chat. In Claude Cowork, attach the folder and I'll work through all of them, or pick the 12 that matter most here."
 
 Read what the user wants before editing. If it's unclear, ask once, in the same message as the vibe ("One look across all six for a carousel, or each on its own?"):
-- **One look, a set** ("carousel", "photo dump", "make them match"): pick the strongest frame as the hero and say why in a line. Run the brief and the board on the hero only. Then start every other photo from the hero's final recipe: keep the look, global sliders and detected masks (`sky`, `person`, `face`, `skin`, `segment`), and redo anything tied to the hero's coordinates (`radial`, `linear`, `brush`, `polygon`, `object`, `heal`) on each photo's own grid. Match brightness and white balance to the hero with a global step. An Instagram carousel shows every slide at one shape, so propose 4:5 for all and flag any photo the crop hurts.
+- **One look, a set** ("carousel", "photo dump", "make them match"): pick the strongest frame as the hero and say why in a line. Run the brief and the board on the hero only. Then run `carry HERO vN PHOTO` for every other photo and preview its `recipe`. It keeps the look, global sliders and detected masks, drops what was tied to the hero's coordinates, and adds a `match the set` step. Redo each `dropped` step that this photo needs on its own grid, eyeball each `check` band, and read `notes`: it says when there were too few greys to match white balance. Then run `sheet` over the set and fix every flagged photo before you show it. Show the sheet as the set view. An Instagram carousel shows every slide at photo 1's shape, so propose 4:5 for all and raise any `crop_flag` as a question.
 - **Each on its own:** one photo at a time, in the order given. Carry what you learned about their taste from photo to photo, and say where you are ("2 of 5").
 - **Which one?** ("which should I post?"): rank them, one line of reasoning each (sharpness, eyes, the light), and edit the one they pick. Never drop a photo silently.
 - **Like this one** ("make mine look like this"): the reference is not an edit target. Match its tone and colour, never export it, and keep it out of the set.

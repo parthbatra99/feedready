@@ -468,6 +468,40 @@ def error_paths(src):
     lib.check("invalid recipe json fails with json", "not valid JSON" in e.get("error", ""), str(e))
 
 
+def sets_cli(tmp, src):
+    import feedready
+
+    Args = lambda **kw: type("Args", (), kw)()
+    cast = load_rgb(src) * np.array([1.0, 0.92, 0.75], np.float32) * 0.7
+    other = tmp / "set_other.png"
+    save_png16(cast.clip(0, 1).astype(np.float32), other)
+    hero_recipe = json.dumps({"label": "Set look", "preset": "instagram", "steps": [
+        {"name": "grade", "look": "cinematic", "amount": 60},
+        {"name": "lift the left", "mask": {"type": "radial", "center": [0.3, 0.5], "radius": [0.2, 0.2]},
+         "adjust": {"exposure": 0.3}},
+        {"name": "top band", "mask": {"type": "linear", "start": [0.5, 0], "end": [0.5, 0.4]},
+         "adjust": {"exposure": -0.2}}]})
+    with lib.basic_tier(), lib.isolated_work():
+        hero = feedready.cmd_preview(Args(recipe=hero_recipe, image=str(src), note="set look"))
+        out = feedready.cmd_carry(Args(hero=str(src), version=hero["version"], image=str(other), strength=0.6,
+                                       output=None))
+        carried = json.loads(Path(out["recipe"]).read_text())
+        names = [st.get("name") for st in carried["steps"]]
+        lib.check("carry keeps the look, drops placed shapes and flags bands to check",
+                  "grade" in names and "lift the left" not in names and out["dropped"] == ["lift the left"]
+                  and out["check"] == ["top band"] and carried["crop"]["aspect"] == "4:5", f"{names} {out}")
+        m = out["match"]
+        lib.check("carry brightens a darker photo and cools a warm cast toward the hero",
+                  m.get("exposure", 0) > 0.2 and m.get("temp", 0) < 0, str(m))
+        sheet = feedready.cmd_sheet(Args(images=[str(src), str(other)]))
+        lib.check("sheet lays out the set and marks what isn't edited yet", Path(sheet["sheet"]).exists()
+                  and sheet["photos"][0]["version"] == hero["version"] and sheet["photos"][1]["version"] is None
+                  and "not edited yet" in sheet["photos"][1]["flags"], str(sheet["photos"]))
+        crowd = feedready.cmd_sheet(Args(images=[str(src)] * 13))
+        lib.check("more than 12 photos points to Cowork", "Cowork" in crowd.get("error", "")
+                  and crowd.get("limit") == 12, str(crowd))
+
+
 def run():
     tmp = lib.tmp()
     src = tmp / "card.png"
@@ -486,5 +520,6 @@ def run():
     print("  (cli surface)")
     doctor_and_masks(tmp, src)
     error_paths(src)
+    sets_cli(tmp, src)
     print("  (phone path)")
     phone_path(src)

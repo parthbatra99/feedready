@@ -36,6 +36,8 @@ cd feedready/skills/feedready
 | `masks` | a contact sheet with every step's mask in red |
 | `board` | the original next to each recipe or saved version, plus a `too_similar` warning for look-alike tiles |
 | `preview` | a screen-size render saved as the next version (`v1`, `v2`…), or full size when the long edge is 2048 px or less (`full_quality`), with a 4:5 round card, a compare, a diff against the last version, edit cards, an edit map, a phone-first review page and a measured `critique` |
+| `carry` | the hero photo's version as a recipe for another photo in the set: placed steps dropped, the crop re-aimed at this photo's subject, and a `match the set` step for brightness and white balance read from neutral pixels |
+| `sheet` | the set in carousel order with per-photo flags (not edited, different shape, off in brightness or warmth); refuses more than 12 photos |
 | `apply` | the full-resolution photo and compare image, in `~/Pictures/feedready/` unless you pass `-o`, plus `detail`: a 100% crop of the face or the most detailed patch, saved in the work dir, as proof of quality. The recipe can be a saved version such as `v3`. |
 
 A recipe is JSON, passed as a file or an inline string. This one crops for Instagram, brightens the eyes, adds bite to the snow caps and removes a reflective strip:
@@ -86,6 +88,7 @@ All paths are under `skills/feedready/`:
 | `scripts/feedready.py` | the CLI: working copy, saved versions, and the `inspect`, `board`, `preview` and `apply` flows |
 | `scripts/render.py` | one render path for every command: looks resolved, prepass, crop, Core Image or numpy |
 | `scripts/critique.py` | the self-review on each version: per-step impact, halos, skin, clipping, face vs background, HDR crunch, noise, and board similarity |
+| `scripts/sets.py` | several photos: which steps carry from the hero, the crop per photo, brightness and white-balance matching, set consistency, the set sheet, and the 12-photo cap |
 | `scripts/review.py` | everything you look at: grid, mask sheet, compare, round card, edit cards, edit map, board, the export's 100% crop, and the phone-first HTML review page |
 | `scripts/diagnose.py` | the photo `profile` and the checks behind every finding (exposure, subject vs background, face vs background, face, skin-aware colour cast, haze, sky, bright distractions, headroom and crop). Add a check as one function in `CHECKS`. |
 | `scripts/masks.py` | mask specs to masks, from simple shapes to EdgeTAM objects, plus combinators and edge refinement |

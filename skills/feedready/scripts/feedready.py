@@ -21,6 +21,7 @@ import recrops
 import masks as maskmod
 import render
 import review
+import sets
 from detect import (
     CACHE,
     MissingCapability,
@@ -47,7 +48,11 @@ USAGE = """feedready: render Claude's photo-edit recipes, version by version, an
   feedready.py masks RECIPE IMG                  contact sheet of every step's mask
   feedready.py board IMG RECIPE [RECIPE ...]     original + each recipe side by side (directions, versions)
   feedready.py preview RECIPE IMG [--note TEXT]  screen-size render saved as the next version, with critique
-  feedready.py apply RECIPE IMG [-o OUT]         full-resolution export + before/after compare
+  feedready.py apply RECIPE IMG [-o OUT]         full-resolution export + before/after compare + 100% crop
+  feedready.py carry HERO vN IMG [--strength S]  the hero's look as a recipe for another photo of the set, with
+                                                 placed steps dropped and brightness/white balance matched
+  feedready.py sheet IMG [IMG ...]               the set in carousel order (each photo's latest version), with
+                                                 shape and consistency flags; 12 photos at most
 
 RECIPE is a path to a JSON file, an inline JSON string (reference/recipe.md), or a
 saved version such as v3. On a Mac, Core Image + Vision render and detect (feedready-engine);
@@ -629,6 +634,77 @@ def cmd_board(args) -> dict:
             "differences": {f"{names[pr['pair'][0]]} | {names[pr['pair'][1]]}": pr["delta"] for pr in pairs}}
 
 
+def _small_render(s: Session, recipe: dict, tag: str) -> np.ndarray:
+    steps, built, _ = s.prepare_steps(recipe)
+    small, small_masks, source = s.scaled(built, SINGLE_EDGE)
+    out = s.stage / f"{tag}.png"
+    s.render(small, steps, small_masks, recipe, out, tag, source, full_size=False)
+    return load_rgb(out)
+
+
+def cmd_carry(args) -> dict:
+    hero = Session(Path(args.hero).expanduser())
+    target = Session(Path(args.image).expanduser())
+    recipe = hero.recipe(args.version)
+    carried, dropped, check = sets.split(recipe)
+    crop, crop_flag = sets.crop_for(recipe, diagnose.run(target.scene)["findings"])
+    if crop:
+        carried["crop"] = crop
+    _, built, _ = target.prepare_steps(carried)
+    empty = {i for i, m in enumerate(built) if m is not None and float(m.max()) < EMPTY_MASK}
+    dropped += [f"{carried['steps'][i].get('name', f'step {i + 1}')} (nothing to act on in this photo)"
+                for i in sorted(empty)]
+    carried["steps"] = [st for i, st in enumerate(carried["steps"]) if i not in empty]
+    check = [c for c in check if any(st.get("name") == c for st in carried["steps"])]
+    target.scene.notes.clear()
+    hero_img = _small_render(hero, recipe, "carry-hero")
+    target_img = _small_render(target, carried, "carry-target")
+    adjust = sets.match(hero_img, target_img, args.strength)
+    if adjust:
+        carried["steps"].append({"name": "match the set", "why": "brings brightness and white balance in line with "
+                                 "the hero photo", "adjust": adjust})
+    ref = args.version.strip().lower()
+    carried["label"] = recipe.get("label") or ref
+    carried["note"] = f"{recipe.get('label') or 'the look'} from {hero.src.stem} {ref}"
+    out = Path(args.output).expanduser() if args.output else target.work / "carried.json"
+    out.write_text(json.dumps(carried, indent=2))
+    notes = list(target.scene.notes)
+    if not (sets.neutral_found(hero_img) and sets.neutral_found(target_img)):
+        notes.append("white balance not matched: one of the photos has too few greys or whites to read a colour cast "
+                     "from; match it by eye if the set looks off")
+    return {"recipe": str(out), "dropped": dropped, "check": check, "match": adjust, "crop": crop,
+            "crop_flag": crop_flag, "notes": notes}
+
+
+def cmd_sheet(args) -> dict:
+    if message := sets.too_many(len(args.images)):
+        return {"error": message, "limit": sets.MAX_PHOTOS}
+    rows, images = [], []
+    for i, arg in enumerate(args.images):
+        s = Session(Path(arg).expanduser())
+        numbers = version_numbers(s.work)
+        if numbers:
+            img, version = load_rgb(versions_dir(s.work) / f"v{numbers[-1]}.jpg"), f"v{numbers[-1]}"
+        else:
+            img, version = render.downscale(s.img, [], PREVIEW_EDGE)[0], None
+        images.append(img)
+        H, W = img.shape[:2]
+        rows.append({"n": i + 1, "photo": str(s.src), "version": version, "size": [W, H], "shape": review.shape(W, H)})
+    first = rows[0]["size"][0] / rows[0]["size"][1]
+    for row, c in zip(rows, sets.consistency(images)):
+        row.update(c)
+        if abs(row["size"][0] / row["size"][1] - first) > 0.02:
+            row["flags"].insert(0, "a different shape from photo 1; a carousel shows every slide at photo 1's shape")
+        if row["version"] is None:
+            row["flags"].insert(0, "not edited yet")
+    h = hashlib.sha1("|".join(r["photo"] for r in rows).encode()).hexdigest()[:8]
+    folder = Path(os.environ.get("FEEDREADY_WORK", CACHE / "work")) / "sets" / h
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "sheet.jpg"
+    sets.sheet([(str(r["n"]), img, bool(r["flags"])) for r, img in zip(rows, images)], path)
+    return {"sheet": str(path), "photos": rows, "flagged": [r["n"] for r in rows if r["flags"]]}
+
+
 def main():
     ap = argparse.ArgumentParser(description=USAGE, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -654,9 +730,18 @@ def main():
     p.add_argument("recipe")
     p.add_argument("image")
     p.add_argument("-o", "--output")
+    p = sub.add_parser("carry")
+    p.add_argument("hero")
+    p.add_argument("version")
+    p.add_argument("image")
+    p.add_argument("--strength", type=float, default=sets.STRENGTH)
+    p.add_argument("-o", "--output")
+    p = sub.add_parser("sheet")
+    p.add_argument("images", nargs="+")
     args = ap.parse_args()
     handler = {"doctor": cmd_doctor, "probe": cmd_probe, "bootstrap": cmd_bootstrap, "inspect": cmd_inspect,
-               "masks": cmd_masks, "board": cmd_board, "preview": cmd_preview, "apply": cmd_apply}[args.cmd]
+               "masks": cmd_masks, "board": cmd_board, "preview": cmd_preview, "apply": cmd_apply,
+               "carry": cmd_carry, "sheet": cmd_sheet}[args.cmd]
     try:
         result = handler(args)
     except MissingCapability as e:

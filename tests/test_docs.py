@@ -94,7 +94,7 @@ def test_commands():
     skill_commands = set(re.findall(r"^\| `([a-z]+)[^`]*` \|", section(SKILL.read_text(), "**Commands:**", "A RECIPE"), re.M))
     usage = feedready.USAGE
     usage_commands = set(re.findall(r"feedready\.py (\w+)", usage))
-    expected = {"doctor", "probe", "bootstrap", "inspect", "masks", "board", "preview", "apply"}
+    expected = {"doctor", "probe", "bootstrap", "inspect", "masks", "board", "preview", "apply", "carry", "sheet"}
     lib.check("skill command table matches the cli", skill_commands == expected, f"skill={skill_commands}")
     lib.check("usage text matches the cli", usage_commands == expected, f"usage={usage_commands}")
 
