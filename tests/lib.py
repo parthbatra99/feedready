@@ -239,7 +239,7 @@ def apply_recipe(renderer, recipe, src, out):
 
 def cli(renderer, cmd, **kw):
     if renderer == "core-image":
-        argv = {"preview": lambda: [kw["recipe"], kw["image"], "--note", kw.get("note", "")],
+        argv = {"preview": lambda: [kw["recipe"], kw["image"], "--note", kw.get("note", "")] + (["--redo"] if kw.get("redo") else []),
                 "board": lambda: [kw["image"], *kw["recipes"]],
                 "apply": lambda: [kw["recipe"], kw["image"], "-o", kw["output"]]}[cmd]()
         return cli_stdout(cmd, *argv)

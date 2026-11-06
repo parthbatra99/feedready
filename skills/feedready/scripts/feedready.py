@@ -47,7 +47,8 @@ USAGE = """feedready: render Claude's photo-edit recipes, version by version, an
                                                  downloads the scene model, and the people models off the Mac
   feedready.py masks RECIPE IMG                  contact sheet of every step's mask
   feedready.py board IMG RECIPE [RECIPE ...]     original + each recipe side by side (directions, versions)
-  feedready.py preview RECIPE IMG [--note TEXT]  screen-size render saved as the next version, with critique
+  feedready.py preview RECIPE IMG [--note TEXT]  screen-size render saved as the next version, with critique;
+                                                 --redo replaces the latest version (a self-review fix unseen yet)
   feedready.py apply RECIPE IMG [-o OUT]         full-resolution export + before/after compare + 100% crop
   feedready.py carry HERO vN IMG [--strength S]  the hero's look as a recipe for another photo of the set, with
                                                  placed steps dropped and brightness/white balance matched
@@ -62,7 +63,7 @@ elsewhere numpy renders and the portable models (bootstrap) detect people, faces
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
 LARGE_MEGAPIXELS = 30
 WORKING_COPY_VERSION = 2
-RELEASE = "0.5.2"
+RELEASE = "0.5.3"
 PREVIEW_EDGE = 1600
 FULL_QUALITY_EDGE = 2048
 DETAIL_SIDE = 600
@@ -521,7 +522,7 @@ def destination(recipe: dict) -> str:
     if isinstance(aspect, (list, tuple)):
         aspect = f"{aspect[0]}:{aspect[1]}"
     name = {"instagram": "Instagram", "story": "Story", "linkedin": "LinkedIn"}.get(preset, "")
-    return " ".join(p for p in (name, aspect or "") if p) or "as shot"
+    return " ".join(p for p in (name, aspect or "") if p) or "original frame"
 
 
 def _page_steps(tiny: np.ndarray, singles: list[dict]) -> list[dict]:
@@ -540,7 +541,11 @@ def cmd_preview(args) -> dict:
     vdir = versions_dir(s.work)
     vdir.mkdir(exist_ok=True)
     previous = version_numbers(s.work)
-    n = (previous[-1] if previous else 0) + 1
+    redo = bool(getattr(args, "redo", False) and previous)
+    if redo:
+        n, previous = previous[-1], previous[:-1]
+    else:
+        n = (previous[-1] if previous else 0) + 1
     tag = f"v{n}"
 
     long_edge = max(s.img.shape[:2])
@@ -591,6 +596,7 @@ def cmd_preview(args) -> dict:
 
     return {
         "version": tag,
+        "redo": redo,
         "preview": str(out),
         "full_quality": full_quality,
         "size": [after.shape[1], after.shape[0]],
@@ -732,6 +738,7 @@ def main():
     p.add_argument("recipe")
     p.add_argument("image")
     p.add_argument("--note", default="")
+    p.add_argument("--redo", action="store_true")
     p = sub.add_parser("apply")
     p.add_argument("recipe")
     p.add_argument("image")

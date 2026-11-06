@@ -35,7 +35,7 @@ cd feedready/skills/feedready
 | `inspect` | a coordinate grid, brightness stats, faces, scene classes, a `profile` (genre and hero), and `diagnostics.findings` (each problem with a ready-made recipe step) |
 | `masks` | a contact sheet with every step's mask in red |
 | `board` | the original next to each recipe or saved version, plus a `too_similar` warning for look-alike tiles |
-| `preview` | a screen-size render saved as the next version (`v1`, `v2`…), or full size when the long edge is 2048 px or less (`full_quality`), with a 4:5 round card, a compare, a diff against the last version, edit cards, an edit map, a phone-first review page and a measured `critique` |
+| `preview` | a screen-size render saved as the next version (`v1`, `v2`…), or full size when the long edge is 2048 px or less (`full_quality`), with a 4:5 round card, a compare, a diff against the last version, edit cards, an edit map, a phone-first review page and a measured `critique`; `--redo` overwrites the latest version, so self-review fixes the user never saw don't become versions |
 | `carry` | the hero photo's version as a recipe for another photo in the set: placed steps dropped, the crop re-aimed at this photo's subject, and a `match the set` step for brightness and white balance read from neutral pixels |
 | `sheet` | the set in carousel order with per-photo flags (not edited, different shape, off in brightness or warmth); refuses more than 12 photos |
 | `apply` | the full-resolution photo and compare image, in `~/Pictures/feedready/` unless you pass `-o`, plus `detail`: a 100% crop of the face or the most detailed patch, saved in the work dir, as proof of quality. The recipe can be a saved version such as `v3`. |

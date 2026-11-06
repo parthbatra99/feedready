@@ -115,6 +115,12 @@ def cli_loop(renderer, tmp, src):
     r2 = lib.cli(renderer, "preview", recipe=json.dumps(second), image=str(src), note="brighter")
     lib.check("the next preview is the next version with a diff against the last", r2["version"] == f"v{n + 1}"
               and r2["diff"] is not None and Path(r2["diff"]).exists(), f"{r1['version']} -> {r2['version']}")
+    fix = {**second, "steps": first["steps"][:1] + [{"name": "brighter", "adjust": {"exposure": 0.2}}]}
+    r3 = lib.cli(renderer, "preview", recipe=json.dumps(fix), image=str(src), note="brighter", redo=True)
+    page = Path(r3["review"]).read_text()
+    lib.check("a self-review redo replaces the unseen version instead of adding one",
+              r3["version"] == r2["version"] and r3["redo"] and r3["diff"] and f"v{n}-v{n + 1}" in r3["diff"]
+              and page.count('"after": "data:') == n + 1, f"{r3['version']} {r3['diff']}")
     out = tmp / f"from_version_{renderer}.png"
     lib.cli(renderer, "apply", recipe=r2["version"], image=str(src), output=str(out))
     exported = load_rgb(out)
@@ -131,9 +137,9 @@ def cli_loop(renderer, tmp, src):
               and any("N and N" in t for t in board["too_similar"]) and not any("M" in t for t in board["too_similar"]),
               str(board["too_similar"]))
 
-    lib.check("preview json contract", set(r1) == {"version", "preview", "full_quality", "size", "card", "compare", "diff", "map",
+    lib.check("preview json contract", set(r1) == {"version", "redo", "preview", "full_quality", "size", "card", "compare", "diff", "map",
                                                    "cards", "review", "critique", "impact", "after", "warnings", "notes"},
-              str(sorted(set(r1) ^ {"version", "preview", "full_quality", "size", "card", "compare", "diff", "map",
+              str(sorted(set(r1) ^ {"version", "redo", "preview", "full_quality", "size", "card", "compare", "diff", "map",
                                     "cards", "review", "critique", "impact", "after", "warnings", "notes"})))
     lib.check("board json contract", set(board) == {"board", "page", "tiles", "too_similar", "differences"})
     page = Path(board["page"]).read_text()

@@ -40,7 +40,7 @@ To show the user an image, use your tool for sending files (SendUserFile in the 
 | `inspect PHOTO --fetch` | downloads the models this photo needs, then grid, stats, `profile` (genre, hero), measured `findings`, `previous_versions`, and `fetched` |
 | `board PHOTO R1 R2 …` | the original plus each recipe side by side, with `too_similar` warnings, as an image (`board`) and a phone-first page (`page`) to pick from |
 | `masks RECIPE PHOTO` | contact sheet of every step's mask |
-| `preview RECIPE PHOTO --note "…"` | a screen-size render saved as the next version `vN`, plus visuals and a critique |
+| `preview RECIPE PHOTO --note "…"` | a screen-size render saved as the next version `vN`, plus visuals and a critique; `--redo` replaces the latest version instead (self-review fixes) |
 | `apply RECIPE PHOTO` | the full-resolution export, with a 100% crop as proof |
 | `carry HERO vN PHOTO` | the hero's look as a recipe for another photo in a set: placed steps and steps with nothing to act on are `dropped`, bands to eyeball are in `check`, the crop follows this photo's subject, and a `match the set` step pulls brightness and white balance toward the hero |
 | `sheet PHOTO…` | the set in carousel order, each photo's latest version, with a flag per photo: not edited yet, a different shape, brighter, darker, warmer or cooler than the rest. 12 photos at most |
@@ -137,7 +137,7 @@ Each round produces one version, `vN`, that the user sees.
 
    | field | what it is |
    |---|---|
-   | `version` | the new version number |
+   | `version` | the new version number (the same one again after `--redo`) |
    | `preview` | the render |
    | `full_quality` | true when the photo is small enough (long edge 2048 px or less) that the preview is already full size |
    | `card` | the round card: vN large with the original beside it, laid out for the photo's shape, labelled preview or full quality |
@@ -157,7 +157,7 @@ Each round produces one version, `vN`, that the user sees.
    - Read `notes`: a mask that came out nearly empty or was bent out of shape by a modifier is listed there. Fix it before judging the render.
    - Run vibes.md's checklist, and ask whether it hits the brief.
 
-   Revise and re-render up to 3 times. Mention self-caught fixes only if they matter ("I pulled the background back; it was haloing your hair").
+   Revise and re-render up to 3 times, each with `--redo`: it replaces the version the user hasn't seen instead of adding one, so the page, its version chips and "back to vN" count only what the user saw. The first render of a round never takes `--redo`. Mention self-caught fixes only if they matter ("I pulled the background back; it was haloing your hair").
 
    **Report what the critique says, not what you hoped.** Something is fixed only when the latest critique stops reporting it. A `fix` issue still open after 3 tries goes in your message as the one change you'd still make, with its number ("your face is still 0.4 stops darker than the wall"). Never write that a halo is gone, a face is the brightest thing, or shadows are eased while the latest critique says otherwise.
 4. **Show.** Every round: `review` where your surface can show a page, otherwise `card`. That's the whole message's imagery, unless one of these applies:
